@@ -9,7 +9,9 @@ public partial class AsteriskBroker
 {
     private const string CallBroadcastEventType = "CallBroadcast";
     private const string ClaimRelativeUrl = "events/claim";
-    private const string AsteriskVariableRelativeUrl = "asterisk/variable";
+    private const string DeviceStatesRelativeUrlFormat = "deviceStates/{0}";
+    private const string NotInUseDeviceState = "NOT_INUSE";
+    private const string UnavailableDeviceState = "UNAVAILABLE";
 
     public IObservable<CallBroadcastEvent> StreamCallBroadcasts() =>
         this.ariEvents
@@ -32,13 +34,16 @@ public partial class AsteriskBroker
         }
     }
 
-    public async ValueTask SetAgentAvailabilityAsync(string agentAppName, bool isAvailable) =>
-        await this.PostAsync(
-            $"{AsteriskVariableRelativeUrl}?variable={Uri.EscapeDataString(AgentAvailabilityVariableName(agentAppName))}" +
-            $"&value={(isAvailable ? "true" : "false")}");
+    public async ValueTask SetAgentAvailabilityAsync(string agentAppName, bool isAvailable)
+    {
+        string relativeUrl = string.Format(DeviceStatesRelativeUrlFormat, AgentDeviceName(agentAppName));
+        string deviceState = isAvailable ? NotInUseDeviceState : UnavailableDeviceState;
 
-    private static string AgentAvailabilityVariableName(string agentAppName) =>
-        $"AGENT_AVAILABLE_{agentAppName}";
+        await this.PutAsync($"{relativeUrl}?deviceState={Uri.EscapeDataString(deviceState)}");
+    }
+
+    private static string AgentDeviceName(string agentAppName) =>
+        Uri.EscapeDataString($"Stasis:Agent-{agentAppName}");
 
     private static bool IsCallBroadcast(JsonElement ariEvent) =>
         ariEvent.TryGetProperty("type", out JsonElement type) &&
