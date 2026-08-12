@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Ringly.Abstractions\Ringly.Abstractions.csproj" />
+    <ProjectReference Include="..\Ringly.Storage.Abstractions\Ringly.Storage.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>
