@@ -29,8 +29,19 @@ docker compose exec asterisk asterisk -rx "dialplan show ride_hailing"
 docker compose exec asterisk asterisk -rx "manager show users"
 ```
 
+## coturn (§6 item 6)
+
+STUN/TURN server (`coturn/coturn:4.17.2-r0-alpine`), covers the client→Asterisk NAT-traversal hop (star topology per §1 — clients don't need to reach each other, only Asterisk).
+
+- `3478` (STUN/TURN, TCP+UDP), `5349` (STUN/TURN over TLS, TCP+UDP), `49160-49200/udp` (relay range)
+- Long-term credential mechanism (`lt-cred-mech`), dev-only user `ringly` / `ringly-dev-turn`, realm `ringly.local`
+- Self-signed dev TLS cert generated at image build time (same pattern as Asterisk's)
+
+Verified locally: `turnutils_stunclient` returns a reflexive address; `turnutils_uclient` with the dev credentials authenticates and allocates (a same-container loopback peer channel-bind then fails with 403 — coturn's normal `no-loopback-peers` default, not an auth failure); wrong credentials are rejected outright.
+
+**ICE config wiring** — `Ringly.Client.SipSorcery`'s `SipSorceryCallOptions` now has `IceServerUrls`/`IceServerUsername`/`IceServerCredential`; `SipSorceryCallClient` builds an `RTCConfiguration` from them and passes it into every `RTCPeerConnection` it creates.
+
 ## Not included yet
 
-- Realtime PJSIP backend (§6 item 8, Postgres/ODBC) — needed for row #7's dynamic config PUT (`InsertSipEndpointConfigAsync`) to actually persist. Tracked as a follow-up using Asterisk's official `contrib/ast-db-manage` Alembic migrations rather than a hand-written schema.
-- coturn (STUN/TURN) — row #20.
-- Real TLS certificate — this uses a self-signed dev cert.
+- Realtime PJSIP backend (§6 item 8) — Done, see row 19b in Ringly-Reference.md.
+- Real TLS certificate — this uses a self-signed dev cert (Asterisk and coturn both).
