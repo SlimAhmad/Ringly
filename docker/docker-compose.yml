@@ -1,8 +1,34 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: asterisk
+      POSTGRES_PASSWORD: asterisk
+      POSTGRES_DB: asterisk
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U asterisk"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: ./migrate
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   asterisk:
     build:
       context: ./asterisk
       dockerfile: Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "5060:5060/udp"   # SIP UDP (server-to-server/PSTN trunking)
       - "8088:8088/tcp"   # ARI/HTTP (internal-only in real deployments; exposed here for local dev)
@@ -10,3 +36,6 @@ services:
       - "5038:5038/tcp"   # AMI (internal-only in real deployments; exposed here for local dev)
       - "10000-10099:10000-10099/udp"  # RTP media
     restart: unless-stopped
+
+volumes:
+  postgres_data:
