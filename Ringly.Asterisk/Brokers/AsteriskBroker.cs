@@ -38,4 +38,10 @@ public partial class AsteriskBroker : IAsteriskBroker
         HttpResponseMessage response = await this.ariClient.PostAsync(relativeUrl, content: null);
         response.EnsureSuccessStatusCode();
     }
+
+    private async ValueTask DeleteAsync(string relativeUrl)
+    {
+        HttpResponseMessage response = await this.ariClient.DeleteAsync(relativeUrl);
+        response.EnsureSuccessStatusCode();
+    }
 }

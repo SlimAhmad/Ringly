@@ -6,6 +6,7 @@ public partial class AsteriskBroker
 {
     private const string BridgesRecordRelativeUrlFormat = "bridges/{0}/record";
     private const string LiveRecordingsRelativeUrlFormat = "recordings/live/{0}";
+    private const string StoredRecordingsRelativeUrlFormat = "recordings/stored/{0}";
 
     public async ValueTask<LiveRecording> InsertRecordingAsync(
         string bridgeId,
@@ -30,6 +31,17 @@ public partial class AsteriskBroker
     public async ValueTask CancelRecordingAsync(string recordingName) =>
         await this.PostAsync($"{LiveRecordingRelativeUrl(recordingName)}/cancel");
 
+    public async ValueTask DeleteStoredRecordingAsync(string recordingName) =>
+        await this.DeleteAsync(StoredRecordingRelativeUrl(recordingName));
+
+    public async ValueTask CopyStoredRecordingAsync(string recordingName, string destinationName) =>
+        await this.PostAsync(
+            $"{StoredRecordingRelativeUrl(recordingName)}/copy" +
+            $"?destinationRecordingName={Uri.EscapeDataString(destinationName)}");
+
     private static string LiveRecordingRelativeUrl(string recordingName) =>
         string.Format(LiveRecordingsRelativeUrlFormat, Uri.EscapeDataString(recordingName));
+
+    private static string StoredRecordingRelativeUrl(string recordingName) =>
+        string.Format(StoredRecordingsRelativeUrlFormat, Uri.EscapeDataString(recordingName));
 }
