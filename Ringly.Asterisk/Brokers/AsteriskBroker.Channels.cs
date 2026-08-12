@@ -10,7 +10,8 @@ public partial class AsteriskBroker
     public async ValueTask<Channel> InsertChannelAsync(string endpoint)
     {
         AriChannelResponse response = await this.PostAsync<AriChannelResponse>(
-            $"{ChannelsRelativeUrl}?endpoint={Uri.EscapeDataString(endpoint)}");
+            $"{ChannelsRelativeUrl}?endpoint={Uri.EscapeDataString(endpoint)}" +
+            $"&app={Uri.EscapeDataString(this.asteriskOptions.StasisAppName)}");
 
         return new Channel { ChannelId = response.Id };
     }
