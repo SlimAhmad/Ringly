@@ -1,8 +1,8 @@
-using System.Net;
 using FluentAssertions;
 using Moq;
 using Ringly.CallCenter.Abstractions.Models;
 using Ringly.CallCenter.Asterisk.Models.Foundations.Queues.Exceptions;
+using RESTFulSense.Exceptions;
 
 namespace Ringly.CallCenter.Asterisk.Tests.Unit.Services.Foundations.Queues;
 
@@ -13,12 +13,7 @@ public partial class AsteriskCallCenterFoundationServiceTests
     {
         // given
         QueueConfig someQueueConfig = CreateRandomQueueConfig();
-
-        var httpRequestException = new HttpRequestException(
-            message: GetRandomString(),
-            inner: null,
-            statusCode: HttpStatusCode.BadRequest);
-
+        var httpResponseBadRequestException = new HttpResponseBadRequestException();
         var invalidQueueConfigException = new InvalidQueueConfigException();
 
         var expectedQueueConfigDependencyValidationException =
@@ -26,7 +21,7 @@ public partial class AsteriskCallCenterFoundationServiceTests
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.InsertBridgeAsync("holding"))
-                .ThrowsAsync(httpRequestException);
+                .ThrowsAsync(httpResponseBadRequestException);
 
         // when
         ValueTask<HoldingBridge> createQueueTask =
@@ -55,20 +50,15 @@ public partial class AsteriskCallCenterFoundationServiceTests
     {
         // given
         QueueConfig someQueueConfig = CreateRandomQueueConfig();
-
-        var httpRequestException = new HttpRequestException(
-            message: GetRandomString(),
-            inner: null,
-            statusCode: HttpStatusCode.Conflict);
-
-        var alreadyExistsQueueConfigException = new AlreadyExistsQueueConfigException(httpRequestException);
+        var httpResponseConflictException = new HttpResponseConflictException();
+        var alreadyExistsQueueConfigException = new AlreadyExistsQueueConfigException(httpResponseConflictException);
 
         var expectedQueueConfigDependencyValidationException =
             new QueueConfigDependencyValidationException(alreadyExistsQueueConfigException);
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.InsertBridgeAsync("holding"))
-                .ThrowsAsync(httpRequestException);
+                .ThrowsAsync(httpResponseConflictException);
 
         // when
         ValueTask<HoldingBridge> createQueueTask =
@@ -92,30 +82,31 @@ public partial class AsteriskCallCenterFoundationServiceTests
         this.loggingBrokerMock.VerifyNoOtherCalls();
     }
 
+    public static TheoryData<Exception> CriticalDependencyExceptions() =>
+    [
+        new HttpResponseUnauthorizedException(),
+        new HttpResponseForbiddenException(),
+        new HttpResponseNotFoundException(),
+        new HttpRequestException()
+    ];
+
     [Theory]
-    [InlineData(HttpStatusCode.Unauthorized)]
-    [InlineData(HttpStatusCode.Forbidden)]
-    [InlineData(HttpStatusCode.NotFound)]
+    [MemberData(nameof(CriticalDependencyExceptions))]
     public async Task ShouldThrowCriticalDependencyExceptionOnCreateQueueIfErrorOccursAndLogItAsync(
-        HttpStatusCode httpStatusCode)
+        Exception dependencyException)
     {
         // given
         QueueConfig someQueueConfig = CreateRandomQueueConfig();
 
-        var httpRequestException = new HttpRequestException(
-            message: GetRandomString(),
-            inner: null,
-            statusCode: httpStatusCode);
-
         var failedAsteriskQueueConfigDependencyException =
-            new FailedAsteriskQueueConfigDependencyException(httpRequestException);
+            new FailedAsteriskQueueConfigDependencyException(dependencyException);
 
         var expectedQueueConfigDependencyException =
             new QueueConfigDependencyException(failedAsteriskQueueConfigDependencyException);
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.InsertBridgeAsync("holding"))
-                .ThrowsAsync(httpRequestException);
+                .ThrowsAsync(dependencyException);
 
         // when
         ValueTask<HoldingBridge> createQueueTask =
@@ -139,68 +130,29 @@ public partial class AsteriskCallCenterFoundationServiceTests
         this.loggingBrokerMock.VerifyNoOtherCalls();
     }
 
-    [Fact]
-    public async Task ShouldThrowCriticalDependencyExceptionOnCreateQueueIfHttpRequestErrorOccursAndLogItAsync()
-    {
-        // given
-        QueueConfig someQueueConfig = CreateRandomQueueConfig();
-        var httpRequestException = new HttpRequestException(GetRandomString());
-
-        var failedAsteriskQueueConfigDependencyException =
-            new FailedAsteriskQueueConfigDependencyException(httpRequestException);
-
-        var expectedQueueConfigDependencyException =
-            new QueueConfigDependencyException(failedAsteriskQueueConfigDependencyException);
-
-        this.asteriskBrokerMock.Setup(broker =>
-            broker.InsertBridgeAsync("holding"))
-                .ThrowsAsync(httpRequestException);
-
-        // when
-        ValueTask<HoldingBridge> createQueueTask =
-            this.asteriskCallCenterFoundationService.CreateQueueAsync(someQueueConfig);
-
-        QueueConfigDependencyException actualException =
-            await Assert.ThrowsAsync<QueueConfigDependencyException>(createQueueTask.AsTask);
-
-        // then
-        actualException.Should().BeEquivalentTo(expectedQueueConfigDependencyException);
-
-        this.asteriskBrokerMock.Verify(broker =>
-            broker.InsertBridgeAsync("holding"),
-                Times.Once);
-
-        this.loggingBrokerMock.Verify(broker =>
-            broker.LogCriticalAsync(It.Is(SameExceptionAs(expectedQueueConfigDependencyException))),
-                Times.Once);
-
-        this.asteriskBrokerMock.VerifyNoOtherCalls();
-        this.loggingBrokerMock.VerifyNoOtherCalls();
-    }
+    public static TheoryData<Exception> NonCriticalDependencyExceptions() =>
+    [
+        new HttpResponseInternalServerErrorException(),
+        new HttpResponseServiceUnavailableException()
+    ];
 
     [Theory]
-    [InlineData(HttpStatusCode.InternalServerError)]
-    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    [MemberData(nameof(NonCriticalDependencyExceptions))]
     public async Task ShouldThrowDependencyExceptionOnCreateQueueIfErrorOccursAndLogItAsync(
-        HttpStatusCode httpStatusCode)
+        Exception dependencyException)
     {
         // given
         QueueConfig someQueueConfig = CreateRandomQueueConfig();
 
-        var httpRequestException = new HttpRequestException(
-            message: GetRandomString(),
-            inner: null,
-            statusCode: httpStatusCode);
-
         var failedAsteriskQueueConfigDependencyException =
-            new FailedAsteriskQueueConfigDependencyException(httpRequestException);
+            new FailedAsteriskQueueConfigDependencyException(dependencyException);
 
         var expectedQueueConfigDependencyException =
             new QueueConfigDependencyException(failedAsteriskQueueConfigDependencyException);
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.InsertBridgeAsync("holding"))
-                .ThrowsAsync(httpRequestException);
+                .ThrowsAsync(dependencyException);
 
         // when
         ValueTask<HoldingBridge> createQueueTask =

@@ -1,5 +1,5 @@
-using System.Net;
 using Ringly.Asterisk.Models.Foundations.SipEndpoints.Exceptions;
+using RESTFulSense.Exceptions;
 using Xeptions;
 
 namespace Ringly.Asterisk.Services.Foundations.SipEndpoints;
@@ -22,42 +22,62 @@ public partial class AsteriskSipEndpointConfigFoundationService
         {
             throw await CreateAndLogValidationException(invalidSipEndpointConfigException);
         }
-        catch (HttpRequestException httpRequestException)
-            when (httpRequestException.StatusCode == HttpStatusCode.BadRequest)
+        catch (HttpResponseBadRequestException)
         {
             var invalidSipEndpointConfigException = new InvalidSipEndpointConfigException();
             throw await CreateAndLogDependencyValidationException(invalidSipEndpointConfigException);
         }
-        catch (HttpRequestException httpRequestException)
-            when (httpRequestException.StatusCode == HttpStatusCode.Conflict)
+        catch (HttpResponseConflictException httpResponseConflictException)
         {
-            var duplicateExtensionException = new DuplicateExtensionException(httpRequestException);
+            var duplicateExtensionException = new DuplicateExtensionException(httpResponseConflictException);
             throw await CreateAndLogDependencyValidationException(duplicateExtensionException);
         }
-        catch (HttpRequestException httpRequestException)
-            when (httpRequestException.StatusCode == HttpStatusCode.NotFound)
+        catch (HttpResponseNotFoundException httpResponseNotFoundException)
         {
-            var notFoundSipEndpointConfigException = new NotFoundSipEndpointConfigException(httpRequestException);
+            var notFoundSipEndpointConfigException = new NotFoundSipEndpointConfigException(httpResponseNotFoundException);
 
             throw await CreateAndLogCriticalDependencyException(
                 new FailedAsteriskSipEndpointConfigDependencyException(notFoundSipEndpointConfigException));
         }
+        catch (HttpResponseUnauthorizedException httpResponseUnauthorizedException)
+        {
+            var failedAsteriskSipEndpointConfigDependencyException =
+                new FailedAsteriskSipEndpointConfigDependencyException(httpResponseUnauthorizedException);
+
+            throw await CreateAndLogCriticalDependencyException(failedAsteriskSipEndpointConfigDependencyException);
+        }
+        catch (HttpResponseForbiddenException httpResponseForbiddenException)
+        {
+            var failedAsteriskSipEndpointConfigDependencyException =
+                new FailedAsteriskSipEndpointConfigDependencyException(httpResponseForbiddenException);
+
+            throw await CreateAndLogCriticalDependencyException(failedAsteriskSipEndpointConfigDependencyException);
+        }
         catch (HttpRequestException httpRequestException)
-            when (httpRequestException.StatusCode is HttpStatusCode.Unauthorized
-                or HttpStatusCode.Forbidden
-                or null)
         {
             var failedAsteriskSipEndpointConfigDependencyException =
                 new FailedAsteriskSipEndpointConfigDependencyException(httpRequestException);
 
             throw await CreateAndLogCriticalDependencyException(failedAsteriskSipEndpointConfigDependencyException);
         }
-        catch (HttpRequestException httpRequestException)
-            when (httpRequestException.StatusCode is HttpStatusCode.InternalServerError
-                or HttpStatusCode.ServiceUnavailable)
+        catch (HttpResponseInternalServerErrorException httpResponseInternalServerErrorException)
         {
             var failedAsteriskSipEndpointConfigDependencyException =
-                new FailedAsteriskSipEndpointConfigDependencyException(httpRequestException);
+                new FailedAsteriskSipEndpointConfigDependencyException(httpResponseInternalServerErrorException);
+
+            throw await CreateAndLogDependencyException(failedAsteriskSipEndpointConfigDependencyException);
+        }
+        catch (HttpResponseServiceUnavailableException httpResponseServiceUnavailableException)
+        {
+            var failedAsteriskSipEndpointConfigDependencyException =
+                new FailedAsteriskSipEndpointConfigDependencyException(httpResponseServiceUnavailableException);
+
+            throw await CreateAndLogDependencyException(failedAsteriskSipEndpointConfigDependencyException);
+        }
+        catch (HttpResponseException httpResponseException)
+        {
+            var failedAsteriskSipEndpointConfigDependencyException =
+                new FailedAsteriskSipEndpointConfigDependencyException(httpResponseException);
 
             throw await CreateAndLogDependencyException(failedAsteriskSipEndpointConfigDependencyException);
         }

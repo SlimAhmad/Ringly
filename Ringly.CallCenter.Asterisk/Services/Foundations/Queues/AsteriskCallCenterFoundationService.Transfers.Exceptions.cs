@@ -1,5 +1,5 @@
-using System.Net;
 using Ringly.CallCenter.Asterisk.Models.Foundations.Transfers.Exceptions;
+using RESTFulSense.Exceptions;
 using Xeptions;
 
 namespace Ringly.CallCenter.Asterisk.Services.Foundations.Queues;
@@ -18,29 +18,57 @@ public partial class AsteriskCallCenterFoundationService
         {
             throw await CreateAndLogTransferValidationException(invalidTransferProgressRequestException);
         }
-        catch (HttpRequestException httpRequestException)
-            when (httpRequestException.StatusCode == HttpStatusCode.BadRequest)
+        catch (HttpResponseBadRequestException)
         {
             var invalidTransferProgressRequestException = new InvalidTransferProgressRequestException();
             throw await CreateAndLogTransferDependencyValidationException(invalidTransferProgressRequestException);
         }
+        catch (HttpResponseUnauthorizedException httpResponseUnauthorizedException)
+        {
+            var failedAsteriskTransferDependencyException =
+                new FailedAsteriskTransferDependencyException(httpResponseUnauthorizedException);
+
+            throw await CreateAndLogTransferCriticalDependencyException(failedAsteriskTransferDependencyException);
+        }
+        catch (HttpResponseForbiddenException httpResponseForbiddenException)
+        {
+            var failedAsteriskTransferDependencyException =
+                new FailedAsteriskTransferDependencyException(httpResponseForbiddenException);
+
+            throw await CreateAndLogTransferCriticalDependencyException(failedAsteriskTransferDependencyException);
+        }
+        catch (HttpResponseNotFoundException httpResponseNotFoundException)
+        {
+            var failedAsteriskTransferDependencyException =
+                new FailedAsteriskTransferDependencyException(httpResponseNotFoundException);
+
+            throw await CreateAndLogTransferCriticalDependencyException(failedAsteriskTransferDependencyException);
+        }
         catch (HttpRequestException httpRequestException)
-            when (httpRequestException.StatusCode is HttpStatusCode.Unauthorized
-                or HttpStatusCode.Forbidden
-                or HttpStatusCode.NotFound
-                or null)
         {
             var failedAsteriskTransferDependencyException =
                 new FailedAsteriskTransferDependencyException(httpRequestException);
 
             throw await CreateAndLogTransferCriticalDependencyException(failedAsteriskTransferDependencyException);
         }
-        catch (HttpRequestException httpRequestException)
-            when (httpRequestException.StatusCode is HttpStatusCode.InternalServerError
-                or HttpStatusCode.ServiceUnavailable)
+        catch (HttpResponseInternalServerErrorException httpResponseInternalServerErrorException)
         {
             var failedAsteriskTransferDependencyException =
-                new FailedAsteriskTransferDependencyException(httpRequestException);
+                new FailedAsteriskTransferDependencyException(httpResponseInternalServerErrorException);
+
+            throw await CreateAndLogTransferDependencyException(failedAsteriskTransferDependencyException);
+        }
+        catch (HttpResponseServiceUnavailableException httpResponseServiceUnavailableException)
+        {
+            var failedAsteriskTransferDependencyException =
+                new FailedAsteriskTransferDependencyException(httpResponseServiceUnavailableException);
+
+            throw await CreateAndLogTransferDependencyException(failedAsteriskTransferDependencyException);
+        }
+        catch (HttpResponseException httpResponseException)
+        {
+            var failedAsteriskTransferDependencyException =
+                new FailedAsteriskTransferDependencyException(httpResponseException);
 
             throw await CreateAndLogTransferDependencyException(failedAsteriskTransferDependencyException);
         }

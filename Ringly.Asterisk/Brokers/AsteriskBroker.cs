@@ -1,11 +1,11 @@
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Reactive.Subjects;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using RESTFulSense.Clients;
 
 namespace Ringly.Asterisk.Brokers;
 
@@ -14,7 +14,8 @@ public partial class AsteriskBroker : IAsteriskBroker
     private static readonly TimeSpan InitialReconnectDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan MaxReconnectDelay = TimeSpan.FromSeconds(30);
 
-    private readonly HttpClient ariClient;
+    private readonly HttpClient httpClient;
+    private readonly IRESTFulApiFactoryClient apiClient;
     private readonly Subject<JsonElement> ariEvents;
     private readonly Subject<IReadOnlyDictionary<string, string>> amiEvents;
     private readonly AsteriskOptions asteriskOptions;
@@ -24,7 +25,7 @@ public partial class AsteriskBroker : IAsteriskBroker
         AsteriskOptions asteriskOptions = options.Value;
         this.asteriskOptions = asteriskOptions;
 
-        this.ariClient = new HttpClient
+        this.httpClient = new HttpClient
         {
             BaseAddress = new Uri(asteriskOptions.BaseUrl)
         };
@@ -32,8 +33,10 @@ public partial class AsteriskBroker : IAsteriskBroker
         string credentials = Convert.ToBase64String(
             Encoding.UTF8.GetBytes($"{asteriskOptions.Username}:{asteriskOptions.Password}"));
 
-        this.ariClient.DefaultRequestHeaders.Authorization =
+        this.httpClient.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Basic", credentials);
+
+        this.apiClient = new RESTFulApiFactoryClient(this.httpClient);
 
         this.ariEvents = new Subject<JsonElement>();
         this.amiEvents = new Subject<IReadOnlyDictionary<string, string>>();
@@ -146,35 +149,40 @@ public partial class AsteriskBroker : IAsteriskBroker
         return eventsUriBuilder.Uri;
     }
 
-    private async ValueTask<T> PostAsync<T>(string relativeUrl)
-    {
-        HttpResponseMessage response = await this.ariClient.PostAsync(relativeUrl, content: null);
-        response.EnsureSuccessStatusCode();
+    private static readonly Func<string, ValueTask<string>> PassThroughDeserialization =
+        content => ValueTask.FromResult(content ?? string.Empty);
 
-        return (await response.Content.ReadFromJsonAsync<T>())!;
-    }
+    private async ValueTask<T> PostAsync<T>(string relativeUrl) =>
+        await this.apiClient.SendHttpRequestAsync<T>(
+            method: "POST",
+            relativeUrl: relativeUrl,
+            cancellationToken: CancellationToken.None);
 
-    private async ValueTask PostAsync(string relativeUrl)
-    {
-        HttpResponseMessage response = await this.ariClient.PostAsync(relativeUrl, content: null);
-        response.EnsureSuccessStatusCode();
-    }
+    private async ValueTask PostAsync(string relativeUrl) =>
+        await this.apiClient.SendHttpRequestAsync(
+            method: "POST",
+            relativeUrl: relativeUrl,
+            cancellationToken: CancellationToken.None,
+            deserailizationFunction: PassThroughDeserialization);
 
-    private async ValueTask DeleteAsync(string relativeUrl)
-    {
-        HttpResponseMessage response = await this.ariClient.DeleteAsync(relativeUrl);
-        response.EnsureSuccessStatusCode();
-    }
+    private async ValueTask DeleteAsync(string relativeUrl) =>
+        await this.apiClient.SendHttpRequestAsync(
+            method: "DELETE",
+            relativeUrl: relativeUrl,
+            cancellationToken: CancellationToken.None,
+            deserailizationFunction: PassThroughDeserialization);
 
-    private async ValueTask PutAsync<T>(string relativeUrl, T content)
-    {
-        HttpResponseMessage response = await this.ariClient.PutAsJsonAsync(relativeUrl, content);
-        response.EnsureSuccessStatusCode();
-    }
+    private async ValueTask PutAsync<T>(string relativeUrl, T content) =>
+        await this.apiClient.SendHttpRequestAsync<T, string>(
+            method: "PUT",
+            relativeUrl: relativeUrl,
+            content: content,
+            deserializationFunction: PassThroughDeserialization);
 
-    private async ValueTask PostAsync<T>(string relativeUrl, T content)
-    {
-        HttpResponseMessage response = await this.ariClient.PostAsJsonAsync(relativeUrl, content);
-        response.EnsureSuccessStatusCode();
-    }
+    private async ValueTask PostAsync<T>(string relativeUrl, T content) =>
+        await this.apiClient.SendHttpRequestAsync<T, string>(
+            method: "POST",
+            relativeUrl: relativeUrl,
+            content: content,
+            deserializationFunction: PassThroughDeserialization);
 }
