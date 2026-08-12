@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="Ringly.Abstractions/Ringly.Abstractions.csproj" />
   <Project Path="Ringly.Abstractions.Tests.Unit/Ringly.Abstractions.Tests.Unit.csproj" />
+  <Project Path="Ringly.Asterisk/Ringly.Asterisk.csproj" />
 </Solution>
