@@ -1,0 +1,12 @@
+services:
+  asterisk:
+    build:
+      context: ./asterisk
+      dockerfile: Dockerfile
+    ports:
+      - "5060:5060/udp"   # SIP UDP (server-to-server/PSTN trunking)
+      - "8088:8088/tcp"   # ARI/HTTP (internal-only in real deployments; exposed here for local dev)
+      - "8089:8089/tcp"   # WSS (WebRTC/mobile SIP signaling + ARI events)
+      - "5038:5038/tcp"   # AMI (internal-only in real deployments; exposed here for local dev)
+      - "10000-10099:10000-10099/udp"  # RTP media
+    restart: unless-stopped
