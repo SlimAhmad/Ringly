@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.11" />
+    <PackageReference Include="SIPSorcery" Version="10.0.15" />
+    <PackageReference Include="System.Reactive" Version="7.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ringly.Client.Abstractions\Ringly.Client.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>
