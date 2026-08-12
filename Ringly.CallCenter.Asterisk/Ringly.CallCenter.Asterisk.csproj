@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Xeption" Version="2.9.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ringly.Asterisk\Ringly.Asterisk.csproj" />
+    <ProjectReference Include="..\Ringly.CallCenter.Abstractions\Ringly.CallCenter.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>
