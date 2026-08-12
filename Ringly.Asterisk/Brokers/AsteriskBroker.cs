@@ -25,9 +25,12 @@ public partial class AsteriskBroker : IAsteriskBroker
         AsteriskOptions asteriskOptions = options.Value;
         this.asteriskOptions = asteriskOptions;
 
+        // REST calls target the ARI HTTP API under /ari/ — asteriskOptions.BaseUrl itself stays
+        // the bare server root (e.g. "http://host:8088") since BuildAriEventsUri and the AMI
+        // TCP connection below both derive their own paths/host directly from it.
         this.httpClient = new HttpClient
         {
-            BaseAddress = new Uri(asteriskOptions.BaseUrl)
+            BaseAddress = new Uri(new Uri(asteriskOptions.BaseUrl.TrimEnd('/') + "/"), "ari/")
         };
 
         string credentials = Convert.ToBase64String(
@@ -152,6 +155,12 @@ public partial class AsteriskBroker : IAsteriskBroker
     private static readonly Func<string, ValueTask<string>> PassThroughDeserialization =
         content => ValueTask.FromResult(content ?? string.Empty);
 
+    private async ValueTask<T> GetAsync<T>(string relativeUrl) =>
+        await this.apiClient.SendHttpRequestAsync<T>(
+            method: "GET",
+            relativeUrl: relativeUrl,
+            cancellationToken: CancellationToken.None);
+
     private async ValueTask<T> PostAsync<T>(string relativeUrl) =>
         await this.apiClient.SendHttpRequestAsync<T>(
             method: "POST",
@@ -184,6 +193,9 @@ public partial class AsteriskBroker : IAsteriskBroker
             method: "PUT",
             relativeUrl: relativeUrl,
             content: content,
+            // RESTFulSense defaults to "text/json", which Asterisk's ARI HTTP server rejects
+            // outright ("failed field value validation") — confirmed against the real endpoint.
+            mediaType: "application/json",
             deserializationFunction: PassThroughDeserialization);
 
     private async ValueTask PostAsync<T>(string relativeUrl, T content) =>
@@ -191,5 +203,6 @@ public partial class AsteriskBroker : IAsteriskBroker
             method: "POST",
             relativeUrl: relativeUrl,
             content: content,
+            mediaType: "application/json",
             deserializationFunction: PassThroughDeserialization);
 }
