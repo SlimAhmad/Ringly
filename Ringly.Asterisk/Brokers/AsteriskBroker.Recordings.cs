@@ -23,13 +23,13 @@ public partial class AsteriskBroker
         await this.PostAsync($"{LiveRecordingRelativeUrl(recordingName)}/pause");
 
     public async ValueTask UnpauseRecordingAsync(string recordingName) =>
-        await this.PostAsync($"{LiveRecordingRelativeUrl(recordingName)}/unpause");
+        await this.DeleteAsync($"{LiveRecordingRelativeUrl(recordingName)}/pause");
 
     public async ValueTask StopRecordingAsync(string recordingName) =>
         await this.PostAsync($"{LiveRecordingRelativeUrl(recordingName)}/stop");
 
     public async ValueTask CancelRecordingAsync(string recordingName) =>
-        await this.PostAsync($"{LiveRecordingRelativeUrl(recordingName)}/cancel");
+        await this.DeleteAsync(LiveRecordingRelativeUrl(recordingName));
 
     public async ValueTask DeleteStoredRecordingAsync(string recordingName) =>
         await this.DeleteAsync(StoredRecordingRelativeUrl(recordingName));
