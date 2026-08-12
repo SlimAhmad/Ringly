@@ -9,6 +9,43 @@ namespace Ringly.Asterisk.Tests.Unit.Services.Foundations.SipEndpoints;
 public partial class AsteriskSipEndpointConfigFoundationServiceTests
 {
     [Fact]
+    public async Task ShouldThrowDependencyValidationExceptionOnAddIfExtensionAlreadyExistsAndLogItAsync()
+    {
+        // given
+        SipEndpointConfig someConfig = CreateRandomSipEndpointConfig();
+
+        var duplicateExtensionException = new DuplicateExtensionException(
+            new InvalidOperationException($"Extension '{someConfig.Extension}' is already provisioned."));
+
+        var expectedException =
+            new SipEndpointConfigDependencyValidationException(duplicateExtensionException);
+
+        this.asteriskBrokerMock.Setup(broker =>
+            broker.RetrieveSipEndpointConfigAsync(someConfig.Extension))
+                .ReturnsAsync([]);
+
+        // when
+        ValueTask addTask = this.sipEndpointConfigFoundationService.AddSipEndpointConfigAsync(someConfig);
+
+        SipEndpointConfigDependencyValidationException actualException =
+            await Assert.ThrowsAsync<SipEndpointConfigDependencyValidationException>(addTask.AsTask);
+
+        // then
+        actualException.Should().BeEquivalentTo(expectedException);
+
+        this.loggingBrokerMock.Verify(broker =>
+            broker.LogErrorAsync(It.Is(SameExceptionAs(expectedException))),
+                Times.Once);
+
+        this.asteriskBrokerMock.Verify(broker =>
+            broker.RetrieveSipEndpointConfigAsync(someConfig.Extension),
+                Times.Once);
+
+        this.asteriskBrokerMock.VerifyNoOtherCalls();
+        this.loggingBrokerMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task ShouldThrowDependencyValidationExceptionOnAddIfBadRequestErrorOccursAndLogItAsync()
     {
         // given
@@ -18,6 +55,10 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
 
         var expectedException =
             new SipEndpointConfigDependencyValidationException(invalidSipEndpointConfigException);
+
+        this.asteriskBrokerMock.Setup(broker =>
+            broker.RetrieveSipEndpointConfigAsync(someConfig.Extension))
+                .ThrowsAsync(new HttpResponseNotFoundException());
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.InsertSipEndpointConfigAsync(someConfig))
@@ -34,6 +75,10 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
 
         this.loggingBrokerMock.Verify(broker =>
             broker.LogErrorAsync(It.Is(SameExceptionAs(expectedException))),
+                Times.Once);
+
+        this.asteriskBrokerMock.Verify(broker =>
+            broker.RetrieveSipEndpointConfigAsync(someConfig.Extension),
                 Times.Once);
 
         this.asteriskBrokerMock.Verify(broker =>
@@ -56,6 +101,10 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
             new SipEndpointConfigDependencyValidationException(duplicateExtensionException);
 
         this.asteriskBrokerMock.Setup(broker =>
+            broker.RetrieveSipEndpointConfigAsync(someConfig.Extension))
+                .ThrowsAsync(new HttpResponseNotFoundException());
+
+        this.asteriskBrokerMock.Setup(broker =>
             broker.InsertSipEndpointConfigAsync(someConfig))
                 .ThrowsAsync(httpResponseConflictException);
 
@@ -70,6 +119,10 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
 
         this.loggingBrokerMock.Verify(broker =>
             broker.LogErrorAsync(It.Is(SameExceptionAs(expectedException))),
+                Times.Once);
+
+        this.asteriskBrokerMock.Verify(broker =>
+            broker.RetrieveSipEndpointConfigAsync(someConfig.Extension),
                 Times.Once);
 
         this.asteriskBrokerMock.Verify(broker =>
@@ -95,6 +148,10 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
             new SipEndpointConfigDependencyException(failedAsteriskSipEndpointConfigDependencyException);
 
         this.asteriskBrokerMock.Setup(broker =>
+            broker.RetrieveSipEndpointConfigAsync(someConfig.Extension))
+                .ThrowsAsync(new HttpResponseNotFoundException());
+
+        this.asteriskBrokerMock.Setup(broker =>
             broker.InsertSipEndpointConfigAsync(someConfig))
                 .ThrowsAsync(httpResponseNotFoundException);
 
@@ -109,6 +166,10 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
 
         this.loggingBrokerMock.Verify(broker =>
             broker.LogCriticalAsync(It.Is(SameExceptionAs(expectedException))),
+                Times.Once);
+
+        this.asteriskBrokerMock.Verify(broker =>
+            broker.RetrieveSipEndpointConfigAsync(someConfig.Extension),
                 Times.Once);
 
         this.asteriskBrokerMock.Verify(broker =>
@@ -141,6 +202,10 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
             new SipEndpointConfigDependencyException(failedAsteriskSipEndpointConfigDependencyException);
 
         this.asteriskBrokerMock.Setup(broker =>
+            broker.RetrieveSipEndpointConfigAsync(someConfig.Extension))
+                .ThrowsAsync(new HttpResponseNotFoundException());
+
+        this.asteriskBrokerMock.Setup(broker =>
             broker.InsertSipEndpointConfigAsync(someConfig))
                 .ThrowsAsync(dependencyException);
 
@@ -155,6 +220,10 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
 
         this.loggingBrokerMock.Verify(broker =>
             broker.LogCriticalAsync(It.Is(SameExceptionAs(expectedException))),
+                Times.Once);
+
+        this.asteriskBrokerMock.Verify(broker =>
+            broker.RetrieveSipEndpointConfigAsync(someConfig.Extension),
                 Times.Once);
 
         this.asteriskBrokerMock.Verify(broker =>
@@ -185,6 +254,10 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
             new SipEndpointConfigDependencyException(failedAsteriskSipEndpointConfigDependencyException);
 
         this.asteriskBrokerMock.Setup(broker =>
+            broker.RetrieveSipEndpointConfigAsync(someConfig.Extension))
+                .ThrowsAsync(new HttpResponseNotFoundException());
+
+        this.asteriskBrokerMock.Setup(broker =>
             broker.InsertSipEndpointConfigAsync(someConfig))
                 .ThrowsAsync(dependencyException);
 
@@ -199,6 +272,10 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
 
         this.loggingBrokerMock.Verify(broker =>
             broker.LogErrorAsync(It.Is(SameExceptionAs(expectedException))),
+                Times.Once);
+
+        this.asteriskBrokerMock.Verify(broker =>
+            broker.RetrieveSipEndpointConfigAsync(someConfig.Extension),
                 Times.Once);
 
         this.asteriskBrokerMock.Verify(broker =>
@@ -221,6 +298,10 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
             new SipEndpointConfigServiceException(failedSipEndpointConfigServiceException);
 
         this.asteriskBrokerMock.Setup(broker =>
+            broker.RetrieveSipEndpointConfigAsync(someConfig.Extension))
+                .ThrowsAsync(new HttpResponseNotFoundException());
+
+        this.asteriskBrokerMock.Setup(broker =>
             broker.InsertSipEndpointConfigAsync(someConfig))
                 .ThrowsAsync(exception);
 
@@ -235,6 +316,10 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
 
         this.loggingBrokerMock.Verify(broker =>
             broker.LogErrorAsync(It.Is(SameExceptionAs(expectedException))),
+                Times.Once);
+
+        this.asteriskBrokerMock.Verify(broker =>
+            broker.RetrieveSipEndpointConfigAsync(someConfig.Extension),
                 Times.Once);
 
         this.asteriskBrokerMock.Verify(broker =>

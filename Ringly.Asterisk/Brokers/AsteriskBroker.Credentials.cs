@@ -5,8 +5,11 @@ namespace Ringly.Asterisk.Brokers;
 
 public partial class AsteriskBroker
 {
-    private const string PjsipConfigRelativeUrlFormat = "asterisk/config/dynamic/pjsip/{0}/{1}";
+    private const string PjsipConfigRelativeUrlFormat = "asterisk/config/dynamic/res_pjsip/{0}/{1}";
     private const string TransferHandlingSetVar = "PJSIP_TRANSFER_HANDLING()=ari-only";
+
+    public async ValueTask<IReadOnlyList<ConfigTuple>> RetrieveSipEndpointConfigAsync(string extension) =>
+        await this.GetPjsipConfigAsync("aor", extension);
 
     public async ValueTask InsertSipEndpointConfigAsync(SipEndpointConfig config)
     {
@@ -35,6 +38,12 @@ public partial class AsteriskBroker
     private async ValueTask PutPjsipConfigAsync(string objectType, string id, IReadOnlyList<ConfigTuple> fields)
     {
         string relativeUrl = string.Format(PjsipConfigRelativeUrlFormat, objectType, Uri.EscapeDataString(id));
-        await this.PutAsync(relativeUrl, fields);
+        await this.PutAsync(relativeUrl, new PjsipConfigRequestBody { Fields = fields });
+    }
+
+    private async ValueTask<IReadOnlyList<ConfigTuple>> GetPjsipConfigAsync(string objectType, string id)
+    {
+        string relativeUrl = string.Format(PjsipConfigRelativeUrlFormat, objectType, Uri.EscapeDataString(id));
+        return await this.GetAsync<List<ConfigTuple>>(relativeUrl);
     }
 }

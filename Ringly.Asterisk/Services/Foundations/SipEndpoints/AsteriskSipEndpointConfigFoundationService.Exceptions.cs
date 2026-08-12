@@ -22,6 +22,10 @@ public partial class AsteriskSipEndpointConfigFoundationService
         {
             throw await CreateAndLogValidationException(invalidSipEndpointConfigException);
         }
+        catch (DuplicateExtensionException duplicateExtensionException)
+        {
+            throw await CreateAndLogDependencyValidationException(duplicateExtensionException);
+        }
         catch (HttpResponseBadRequestException)
         {
             var invalidSipEndpointConfigException = new InvalidSipEndpointConfigException();
