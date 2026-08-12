@@ -12,4 +12,5 @@
   <Project Path="Ringly.Storage.Abstractions/Ringly.Storage.Abstractions.csproj" />
   <Project Path="Ringly.Storage.AzureBlob.Tests.Unit/Ringly.Storage.AzureBlob.Tests.Unit.csproj" />
   <Project Path="Ringly.Storage.AzureBlob/Ringly.Storage.AzureBlob.csproj" />
+  <Project Path="Ringly.Trunking.Abstractions/Ringly.Trunking.Abstractions.csproj" />
 </Solution>
