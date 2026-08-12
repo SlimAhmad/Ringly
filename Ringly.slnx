@@ -1,8 +1,4 @@
 <Solution>
-  <Folder Name="/src/">
-    <Project Path="src/Ringly.Abstractions/Ringly.Abstractions.csproj" />
-  </Folder>
-  <Folder Name="/tests/">
-    <Project Path="tests/Ringly.Abstractions.Tests.Unit/Ringly.Abstractions.Tests.Unit.csproj" />
-  </Folder>
+  <Project Path="Ringly.Abstractions/Ringly.Abstractions.csproj" />
+  <Project Path="Ringly.Abstractions.Tests.Unit/Ringly.Abstractions.Tests.Unit.csproj" />
 </Solution>
