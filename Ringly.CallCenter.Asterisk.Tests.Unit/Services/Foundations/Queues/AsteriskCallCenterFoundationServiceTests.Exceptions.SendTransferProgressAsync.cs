@@ -1,8 +1,8 @@
-using System.Net;
 using FluentAssertions;
 using Moq;
 using Ringly.Abstractions.Models;
 using Ringly.CallCenter.Asterisk.Models.Foundations.Transfers.Exceptions;
+using RESTFulSense.Exceptions;
 
 namespace Ringly.CallCenter.Asterisk.Tests.Unit.Services.Foundations.Queues;
 
@@ -14,10 +14,7 @@ public partial class AsteriskCallCenterFoundationServiceTests
         // given
         string someChannelId = GetRandomString();
         TransferState someState = TransferState.ChannelAnswered;
-
-        var httpRequestException = new HttpRequestException(
-            message: GetRandomString(), inner: null, statusCode: HttpStatusCode.BadRequest);
-
+        var httpResponseBadRequestException = new HttpResponseBadRequestException();
         var invalidTransferProgressRequestException = new InvalidTransferProgressRequestException();
 
         var expectedException =
@@ -25,7 +22,7 @@ public partial class AsteriskCallCenterFoundationServiceTests
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.SendTransferProgressAsync(someChannelId, someState))
-                .ThrowsAsync(httpRequestException);
+                .ThrowsAsync(httpResponseBadRequestException);
 
         // when
         ValueTask sendTask =
@@ -49,29 +46,32 @@ public partial class AsteriskCallCenterFoundationServiceTests
         this.loggingBrokerMock.VerifyNoOtherCalls();
     }
 
+    public static TheoryData<Exception> TransferCriticalDependencyExceptions() =>
+    [
+        new HttpResponseUnauthorizedException(),
+        new HttpResponseForbiddenException(),
+        new HttpResponseNotFoundException(),
+        new HttpRequestException()
+    ];
+
     [Theory]
-    [InlineData(HttpStatusCode.Unauthorized)]
-    [InlineData(HttpStatusCode.Forbidden)]
-    [InlineData(HttpStatusCode.NotFound)]
+    [MemberData(nameof(TransferCriticalDependencyExceptions))]
     public async Task ShouldThrowCriticalDependencyExceptionOnSendTransferProgressIfErrorOccursAndLogItAsync(
-        HttpStatusCode httpStatusCode)
+        Exception dependencyException)
     {
         // given
         string someChannelId = GetRandomString();
         TransferState someState = TransferState.ChannelAnswered;
 
-        var httpRequestException = new HttpRequestException(
-            message: GetRandomString(), inner: null, statusCode: httpStatusCode);
-
         var failedAsteriskTransferDependencyException =
-            new FailedAsteriskTransferDependencyException(httpRequestException);
+            new FailedAsteriskTransferDependencyException(dependencyException);
 
         var expectedException =
             new TransferDependencyException(failedAsteriskTransferDependencyException);
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.SendTransferProgressAsync(someChannelId, someState))
-                .ThrowsAsync(httpRequestException);
+                .ThrowsAsync(dependencyException);
 
         // when
         ValueTask sendTask =
@@ -95,68 +95,30 @@ public partial class AsteriskCallCenterFoundationServiceTests
         this.loggingBrokerMock.VerifyNoOtherCalls();
     }
 
-    [Fact]
-    public async Task ShouldThrowCriticalDependencyExceptionOnSendTransferProgressIfHttpRequestErrorOccursAndLogItAsync()
-    {
-        // given
-        string someChannelId = GetRandomString();
-        TransferState someState = TransferState.ChannelAnswered;
-        var httpRequestException = new HttpRequestException(GetRandomString());
-
-        var failedAsteriskTransferDependencyException =
-            new FailedAsteriskTransferDependencyException(httpRequestException);
-
-        var expectedException =
-            new TransferDependencyException(failedAsteriskTransferDependencyException);
-
-        this.asteriskBrokerMock.Setup(broker =>
-            broker.SendTransferProgressAsync(someChannelId, someState))
-                .ThrowsAsync(httpRequestException);
-
-        // when
-        ValueTask sendTask =
-            this.asteriskCallCenterFoundationService.SendTransferProgressAsync(someChannelId, someState);
-
-        TransferDependencyException actualException =
-            await Assert.ThrowsAsync<TransferDependencyException>(sendTask.AsTask);
-
-        // then
-        actualException.Should().BeEquivalentTo(expectedException);
-
-        this.asteriskBrokerMock.Verify(broker =>
-            broker.SendTransferProgressAsync(someChannelId, someState),
-                Times.Once);
-
-        this.loggingBrokerMock.Verify(broker =>
-            broker.LogCriticalAsync(It.Is(SameExceptionAs(expectedException))),
-                Times.Once);
-
-        this.asteriskBrokerMock.VerifyNoOtherCalls();
-        this.loggingBrokerMock.VerifyNoOtherCalls();
-    }
+    public static TheoryData<Exception> TransferNonCriticalDependencyExceptions() =>
+    [
+        new HttpResponseInternalServerErrorException(),
+        new HttpResponseServiceUnavailableException()
+    ];
 
     [Theory]
-    [InlineData(HttpStatusCode.InternalServerError)]
-    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    [MemberData(nameof(TransferNonCriticalDependencyExceptions))]
     public async Task ShouldThrowDependencyExceptionOnSendTransferProgressIfErrorOccursAndLogItAsync(
-        HttpStatusCode httpStatusCode)
+        Exception dependencyException)
     {
         // given
         string someChannelId = GetRandomString();
         TransferState someState = TransferState.ChannelAnswered;
 
-        var httpRequestException = new HttpRequestException(
-            message: GetRandomString(), inner: null, statusCode: httpStatusCode);
-
         var failedAsteriskTransferDependencyException =
-            new FailedAsteriskTransferDependencyException(httpRequestException);
+            new FailedAsteriskTransferDependencyException(dependencyException);
 
         var expectedException =
             new TransferDependencyException(failedAsteriskTransferDependencyException);
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.SendTransferProgressAsync(someChannelId, someState))
-                .ThrowsAsync(httpRequestException);
+                .ThrowsAsync(dependencyException);
 
         // when
         ValueTask sendTask =

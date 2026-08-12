@@ -1,6 +1,6 @@
-using System.Net;
 using Ringly.CallCenter.Abstractions.Models;
 using Ringly.CallCenter.Asterisk.Models.Foundations.Queues.Exceptions;
+using RESTFulSense.Exceptions;
 using Xeptions;
 
 namespace Ringly.CallCenter.Asterisk.Services.Foundations.Queues;
@@ -23,35 +23,62 @@ public partial class AsteriskCallCenterFoundationService
         {
             throw await CreateAndLogValidationException(invalidQueueConfigException);
         }
-        catch (HttpRequestException httpRequestException)
-            when (httpRequestException.StatusCode == HttpStatusCode.BadRequest)
+        catch (HttpResponseBadRequestException)
         {
             var invalidQueueConfigException = new InvalidQueueConfigException();
             throw await CreateAndLogDependencyValidationException(invalidQueueConfigException);
         }
-        catch (HttpRequestException httpRequestException)
-            when (httpRequestException.StatusCode == HttpStatusCode.Conflict)
+        catch (HttpResponseConflictException httpResponseConflictException)
         {
-            var alreadyExistsQueueConfigException = new AlreadyExistsQueueConfigException(httpRequestException);
+            var alreadyExistsQueueConfigException = new AlreadyExistsQueueConfigException(httpResponseConflictException);
             throw await CreateAndLogDependencyValidationException(alreadyExistsQueueConfigException);
         }
+        catch (HttpResponseUnauthorizedException httpResponseUnauthorizedException)
+        {
+            var failedAsteriskQueueConfigDependencyException =
+                new FailedAsteriskQueueConfigDependencyException(httpResponseUnauthorizedException);
+
+            throw await CreateAndLogCriticalDependencyException(failedAsteriskQueueConfigDependencyException);
+        }
+        catch (HttpResponseForbiddenException httpResponseForbiddenException)
+        {
+            var failedAsteriskQueueConfigDependencyException =
+                new FailedAsteriskQueueConfigDependencyException(httpResponseForbiddenException);
+
+            throw await CreateAndLogCriticalDependencyException(failedAsteriskQueueConfigDependencyException);
+        }
+        catch (HttpResponseNotFoundException httpResponseNotFoundException)
+        {
+            var failedAsteriskQueueConfigDependencyException =
+                new FailedAsteriskQueueConfigDependencyException(httpResponseNotFoundException);
+
+            throw await CreateAndLogCriticalDependencyException(failedAsteriskQueueConfigDependencyException);
+        }
         catch (HttpRequestException httpRequestException)
-            when (httpRequestException.StatusCode is HttpStatusCode.Unauthorized
-                or HttpStatusCode.Forbidden
-                or HttpStatusCode.NotFound
-                or null)
         {
             var failedAsteriskQueueConfigDependencyException =
                 new FailedAsteriskQueueConfigDependencyException(httpRequestException);
 
             throw await CreateAndLogCriticalDependencyException(failedAsteriskQueueConfigDependencyException);
         }
-        catch (HttpRequestException httpRequestException)
-            when (httpRequestException.StatusCode is HttpStatusCode.InternalServerError
-                or HttpStatusCode.ServiceUnavailable)
+        catch (HttpResponseInternalServerErrorException httpResponseInternalServerErrorException)
         {
             var failedAsteriskQueueConfigDependencyException =
-                new FailedAsteriskQueueConfigDependencyException(httpRequestException);
+                new FailedAsteriskQueueConfigDependencyException(httpResponseInternalServerErrorException);
+
+            throw await CreateAndLogDependencyException(failedAsteriskQueueConfigDependencyException);
+        }
+        catch (HttpResponseServiceUnavailableException httpResponseServiceUnavailableException)
+        {
+            var failedAsteriskQueueConfigDependencyException =
+                new FailedAsteriskQueueConfigDependencyException(httpResponseServiceUnavailableException);
+
+            throw await CreateAndLogDependencyException(failedAsteriskQueueConfigDependencyException);
+        }
+        catch (HttpResponseException httpResponseException)
+        {
+            var failedAsteriskQueueConfigDependencyException =
+                new FailedAsteriskQueueConfigDependencyException(httpResponseException);
 
             throw await CreateAndLogDependencyException(failedAsteriskQueueConfigDependencyException);
         }

@@ -1,8 +1,8 @@
-using System.Net;
 using FluentAssertions;
 using Moq;
 using Ringly.Abstractions.Models;
 using Ringly.Asterisk.Models.Foundations.SipEndpoints.Exceptions;
+using RESTFulSense.Exceptions;
 
 namespace Ringly.Asterisk.Tests.Unit.Services.Foundations.SipEndpoints;
 
@@ -13,10 +13,7 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
     {
         // given
         SipEndpointConfig someConfig = CreateRandomSipEndpointConfig();
-
-        var httpRequestException = new HttpRequestException(
-            message: GetRandomString(), inner: null, statusCode: HttpStatusCode.BadRequest);
-
+        var httpResponseBadRequestException = new HttpResponseBadRequestException();
         var invalidSipEndpointConfigException = new InvalidSipEndpointConfigException();
 
         var expectedException =
@@ -24,7 +21,7 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.InsertSipEndpointConfigAsync(someConfig))
-                .ThrowsAsync(httpRequestException);
+                .ThrowsAsync(httpResponseBadRequestException);
 
         // when
         ValueTask addTask = this.sipEndpointConfigFoundationService.AddSipEndpointConfigAsync(someConfig);
@@ -52,18 +49,15 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
     {
         // given
         SipEndpointConfig someConfig = CreateRandomSipEndpointConfig();
-
-        var httpRequestException = new HttpRequestException(
-            message: GetRandomString(), inner: null, statusCode: HttpStatusCode.Conflict);
-
-        var duplicateExtensionException = new DuplicateExtensionException(httpRequestException);
+        var httpResponseConflictException = new HttpResponseConflictException();
+        var duplicateExtensionException = new DuplicateExtensionException(httpResponseConflictException);
 
         var expectedException =
             new SipEndpointConfigDependencyValidationException(duplicateExtensionException);
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.InsertSipEndpointConfigAsync(someConfig))
-                .ThrowsAsync(httpRequestException);
+                .ThrowsAsync(httpResponseConflictException);
 
         // when
         ValueTask addTask = this.sipEndpointConfigFoundationService.AddSipEndpointConfigAsync(someConfig);
@@ -91,11 +85,8 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
     {
         // given
         SipEndpointConfig someConfig = CreateRandomSipEndpointConfig();
-
-        var httpRequestException = new HttpRequestException(
-            message: GetRandomString(), inner: null, statusCode: HttpStatusCode.NotFound);
-
-        var notFoundSipEndpointConfigException = new NotFoundSipEndpointConfigException(httpRequestException);
+        var httpResponseNotFoundException = new HttpResponseNotFoundException();
+        var notFoundSipEndpointConfigException = new NotFoundSipEndpointConfigException(httpResponseNotFoundException);
 
         var failedAsteriskSipEndpointConfigDependencyException =
             new FailedAsteriskSipEndpointConfigDependencyException(notFoundSipEndpointConfigException);
@@ -105,7 +96,7 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.InsertSipEndpointConfigAsync(someConfig))
-                .ThrowsAsync(httpRequestException);
+                .ThrowsAsync(httpResponseNotFoundException);
 
         // when
         ValueTask addTask = this.sipEndpointConfigFoundationService.AddSipEndpointConfigAsync(someConfig);
@@ -128,27 +119,30 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
         this.loggingBrokerMock.VerifyNoOtherCalls();
     }
 
+    public static TheoryData<Exception> CriticalDependencyExceptions() =>
+    [
+        new HttpResponseUnauthorizedException(),
+        new HttpResponseForbiddenException(),
+        new HttpRequestException()
+    ];
+
     [Theory]
-    [InlineData(HttpStatusCode.Unauthorized)]
-    [InlineData(HttpStatusCode.Forbidden)]
+    [MemberData(nameof(CriticalDependencyExceptions))]
     public async Task ShouldThrowCriticalDependencyExceptionOnAddIfErrorOccursAndLogItAsync(
-        HttpStatusCode httpStatusCode)
+        Exception dependencyException)
     {
         // given
         SipEndpointConfig someConfig = CreateRandomSipEndpointConfig();
 
-        var httpRequestException = new HttpRequestException(
-            message: GetRandomString(), inner: null, statusCode: httpStatusCode);
-
         var failedAsteriskSipEndpointConfigDependencyException =
-            new FailedAsteriskSipEndpointConfigDependencyException(httpRequestException);
+            new FailedAsteriskSipEndpointConfigDependencyException(dependencyException);
 
         var expectedException =
             new SipEndpointConfigDependencyException(failedAsteriskSipEndpointConfigDependencyException);
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.InsertSipEndpointConfigAsync(someConfig))
-                .ThrowsAsync(httpRequestException);
+                .ThrowsAsync(dependencyException);
 
         // when
         ValueTask addTask = this.sipEndpointConfigFoundationService.AddSipEndpointConfigAsync(someConfig);
@@ -171,64 +165,28 @@ public partial class AsteriskSipEndpointConfigFoundationServiceTests
         this.loggingBrokerMock.VerifyNoOtherCalls();
     }
 
-    [Fact]
-    public async Task ShouldThrowCriticalDependencyExceptionOnAddIfHttpRequestErrorOccursAndLogItAsync()
-    {
-        // given
-        SipEndpointConfig someConfig = CreateRandomSipEndpointConfig();
-        var httpRequestException = new HttpRequestException(GetRandomString());
-
-        var failedAsteriskSipEndpointConfigDependencyException =
-            new FailedAsteriskSipEndpointConfigDependencyException(httpRequestException);
-
-        var expectedException =
-            new SipEndpointConfigDependencyException(failedAsteriskSipEndpointConfigDependencyException);
-
-        this.asteriskBrokerMock.Setup(broker =>
-            broker.InsertSipEndpointConfigAsync(someConfig))
-                .ThrowsAsync(httpRequestException);
-
-        // when
-        ValueTask addTask = this.sipEndpointConfigFoundationService.AddSipEndpointConfigAsync(someConfig);
-
-        SipEndpointConfigDependencyException actualException =
-            await Assert.ThrowsAsync<SipEndpointConfigDependencyException>(addTask.AsTask);
-
-        // then
-        actualException.Should().BeEquivalentTo(expectedException);
-
-        this.loggingBrokerMock.Verify(broker =>
-            broker.LogCriticalAsync(It.Is(SameExceptionAs(expectedException))),
-                Times.Once);
-
-        this.asteriskBrokerMock.Verify(broker =>
-            broker.InsertSipEndpointConfigAsync(someConfig),
-                Times.Once);
-
-        this.asteriskBrokerMock.VerifyNoOtherCalls();
-        this.loggingBrokerMock.VerifyNoOtherCalls();
-    }
+    public static TheoryData<Exception> NonCriticalDependencyExceptions() =>
+    [
+        new HttpResponseInternalServerErrorException(),
+        new HttpResponseServiceUnavailableException()
+    ];
 
     [Theory]
-    [InlineData(HttpStatusCode.InternalServerError)]
-    [InlineData(HttpStatusCode.ServiceUnavailable)]
-    public async Task ShouldThrowDependencyExceptionOnAddIfErrorOccursAndLogItAsync(HttpStatusCode httpStatusCode)
+    [MemberData(nameof(NonCriticalDependencyExceptions))]
+    public async Task ShouldThrowDependencyExceptionOnAddIfErrorOccursAndLogItAsync(Exception dependencyException)
     {
         // given
         SipEndpointConfig someConfig = CreateRandomSipEndpointConfig();
 
-        var httpRequestException = new HttpRequestException(
-            message: GetRandomString(), inner: null, statusCode: httpStatusCode);
-
         var failedAsteriskSipEndpointConfigDependencyException =
-            new FailedAsteriskSipEndpointConfigDependencyException(httpRequestException);
+            new FailedAsteriskSipEndpointConfigDependencyException(dependencyException);
 
         var expectedException =
             new SipEndpointConfigDependencyException(failedAsteriskSipEndpointConfigDependencyException);
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.InsertSipEndpointConfigAsync(someConfig))
-                .ThrowsAsync(httpRequestException);
+                .ThrowsAsync(dependencyException);
 
         // when
         ValueTask addTask = this.sipEndpointConfigFoundationService.AddSipEndpointConfigAsync(someConfig);

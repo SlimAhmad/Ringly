@@ -1,7 +1,7 @@
-using System.Net;
 using System.Reactive.Linq;
 using System.Text.Json;
 using Ringly.Abstractions.Models;
+using RESTFulSense.Exceptions;
 
 namespace Ringly.Asterisk.Brokers;
 
@@ -18,18 +18,18 @@ public partial class AsteriskBroker
 
     public async ValueTask<ClaimResult> ClaimCallAsync(string channelId, string agentAppName)
     {
-        HttpResponseMessage response = await this.ariClient.PostAsync(
-            $"{ClaimRelativeUrl}?channelId={Uri.EscapeDataString(channelId)}&application={Uri.EscapeDataString(agentAppName)}",
-            content: null);
+        string relativeUrl =
+            $"{ClaimRelativeUrl}?channelId={Uri.EscapeDataString(channelId)}&application={Uri.EscapeDataString(agentAppName)}";
 
-        if (response.StatusCode == HttpStatusCode.Conflict)
+        try
+        {
+            await this.PostAsync(relativeUrl);
+            return new ClaimResult { Claimed = true, ChannelId = channelId };
+        }
+        catch (HttpResponseConflictException)
         {
             return new ClaimResult { Claimed = false, ChannelId = channelId };
         }
-
-        response.EnsureSuccessStatusCode();
-
-        return new ClaimResult { Claimed = true, ChannelId = channelId };
     }
 
     public async ValueTask SetAgentAvailabilityAsync(string agentAppName, bool isAvailable) =>

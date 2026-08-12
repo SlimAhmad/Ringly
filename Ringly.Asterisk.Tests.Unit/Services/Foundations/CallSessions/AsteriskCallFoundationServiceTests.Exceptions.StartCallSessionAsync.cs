@@ -1,8 +1,8 @@
-using System.Net;
 using FluentAssertions;
 using Moq;
 using Ringly.Abstractions.Models;
 using Ringly.Asterisk.Models.Foundations.CallSessions.Exceptions;
+using RESTFulSense.Exceptions;
 
 namespace Ringly.Asterisk.Tests.Unit.Services.Foundations.CallSessions;
 
@@ -14,10 +14,7 @@ public partial class AsteriskCallFoundationServiceTests
         // given
         CallParticipant partyA = CreateRandomCallParticipant();
         CallParticipant partyB = CreateRandomCallParticipant();
-
-        var httpRequestException = new HttpRequestException(
-            message: GetRandomString(), inner: null, statusCode: HttpStatusCode.BadRequest);
-
+        var httpResponseBadRequestException = new HttpResponseBadRequestException();
         var invalidCallParticipantException = new InvalidCallParticipantException();
 
         var expectedException =
@@ -25,7 +22,7 @@ public partial class AsteriskCallFoundationServiceTests
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.InsertBridgeAsync("mixing"))
-                .ThrowsAsync(httpRequestException);
+                .ThrowsAsync(httpResponseBadRequestException);
 
         // when
         ValueTask<CallSession> startTask =
@@ -49,29 +46,32 @@ public partial class AsteriskCallFoundationServiceTests
         this.loggingBrokerMock.VerifyNoOtherCalls();
     }
 
+    public static TheoryData<Exception> CriticalDependencyExceptions() =>
+    [
+        new HttpResponseUnauthorizedException(),
+        new HttpResponseForbiddenException(),
+        new HttpResponseNotFoundException(),
+        new HttpRequestException()
+    ];
+
     [Theory]
-    [InlineData(HttpStatusCode.Unauthorized)]
-    [InlineData(HttpStatusCode.Forbidden)]
-    [InlineData(HttpStatusCode.NotFound)]
+    [MemberData(nameof(CriticalDependencyExceptions))]
     public async Task ShouldThrowCriticalDependencyExceptionOnStartIfErrorOccursAndLogItAsync(
-        HttpStatusCode httpStatusCode)
+        Exception dependencyException)
     {
         // given
         CallParticipant partyA = CreateRandomCallParticipant();
         CallParticipant partyB = CreateRandomCallParticipant();
 
-        var httpRequestException = new HttpRequestException(
-            message: GetRandomString(), inner: null, statusCode: httpStatusCode);
-
         var failedAsteriskCallProviderDependencyException =
-            new FailedAsteriskCallProviderDependencyException(httpRequestException);
+            new FailedAsteriskCallProviderDependencyException(dependencyException);
 
         var expectedException =
             new CallProviderDependencyException(failedAsteriskCallProviderDependencyException);
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.InsertBridgeAsync("mixing"))
-                .ThrowsAsync(httpRequestException);
+                .ThrowsAsync(dependencyException);
 
         // when
         ValueTask<CallSession> startTask =
@@ -95,67 +95,29 @@ public partial class AsteriskCallFoundationServiceTests
         this.loggingBrokerMock.VerifyNoOtherCalls();
     }
 
-    [Fact]
-    public async Task ShouldThrowCriticalDependencyExceptionOnStartIfHttpRequestErrorOccursAndLogItAsync()
-    {
-        // given
-        CallParticipant partyA = CreateRandomCallParticipant();
-        CallParticipant partyB = CreateRandomCallParticipant();
-        var httpRequestException = new HttpRequestException(GetRandomString());
-
-        var failedAsteriskCallProviderDependencyException =
-            new FailedAsteriskCallProviderDependencyException(httpRequestException);
-
-        var expectedException =
-            new CallProviderDependencyException(failedAsteriskCallProviderDependencyException);
-
-        this.asteriskBrokerMock.Setup(broker =>
-            broker.InsertBridgeAsync("mixing"))
-                .ThrowsAsync(httpRequestException);
-
-        // when
-        ValueTask<CallSession> startTask =
-            this.callFoundationService.StartCallSessionAsync(partyA, partyB);
-
-        CallProviderDependencyException actualException =
-            await Assert.ThrowsAsync<CallProviderDependencyException>(startTask.AsTask);
-
-        // then
-        actualException.Should().BeEquivalentTo(expectedException);
-
-        this.asteriskBrokerMock.Verify(broker =>
-            broker.InsertBridgeAsync("mixing"),
-                Times.Once);
-
-        this.loggingBrokerMock.Verify(broker =>
-            broker.LogCriticalAsync(It.Is(SameExceptionAs(expectedException))),
-                Times.Once);
-
-        this.asteriskBrokerMock.VerifyNoOtherCalls();
-        this.loggingBrokerMock.VerifyNoOtherCalls();
-    }
+    public static TheoryData<Exception> NonCriticalDependencyExceptions() =>
+    [
+        new HttpResponseInternalServerErrorException(),
+        new HttpResponseServiceUnavailableException()
+    ];
 
     [Theory]
-    [InlineData(HttpStatusCode.InternalServerError)]
-    [InlineData(HttpStatusCode.ServiceUnavailable)]
-    public async Task ShouldThrowDependencyExceptionOnStartIfErrorOccursAndLogItAsync(HttpStatusCode httpStatusCode)
+    [MemberData(nameof(NonCriticalDependencyExceptions))]
+    public async Task ShouldThrowDependencyExceptionOnStartIfErrorOccursAndLogItAsync(Exception dependencyException)
     {
         // given
         CallParticipant partyA = CreateRandomCallParticipant();
         CallParticipant partyB = CreateRandomCallParticipant();
 
-        var httpRequestException = new HttpRequestException(
-            message: GetRandomString(), inner: null, statusCode: httpStatusCode);
-
         var failedAsteriskCallProviderDependencyException =
-            new FailedAsteriskCallProviderDependencyException(httpRequestException);
+            new FailedAsteriskCallProviderDependencyException(dependencyException);
 
         var expectedException =
             new CallProviderDependencyException(failedAsteriskCallProviderDependencyException);
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.InsertBridgeAsync("mixing"))
-                .ThrowsAsync(httpRequestException);
+                .ThrowsAsync(dependencyException);
 
         // when
         ValueTask<CallSession> startTask =

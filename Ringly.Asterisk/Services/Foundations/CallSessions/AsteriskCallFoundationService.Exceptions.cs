@@ -1,6 +1,6 @@
-using System.Net;
 using Ringly.Abstractions.Models;
 using Ringly.Asterisk.Models.Foundations.CallSessions.Exceptions;
+using RESTFulSense.Exceptions;
 using Xeptions;
 
 namespace Ringly.Asterisk.Services.Foundations.CallSessions;
@@ -23,29 +23,57 @@ public partial class AsteriskCallFoundationService
         {
             throw await CreateAndLogValidationException(invalidCallParticipantException);
         }
-        catch (HttpRequestException httpRequestException)
-            when (httpRequestException.StatusCode == HttpStatusCode.BadRequest)
+        catch (HttpResponseBadRequestException)
         {
             var invalidCallParticipantException = new InvalidCallParticipantException();
             throw await CreateAndLogDependencyValidationException(invalidCallParticipantException);
         }
+        catch (HttpResponseUnauthorizedException httpResponseUnauthorizedException)
+        {
+            var failedAsteriskCallProviderDependencyException =
+                new FailedAsteriskCallProviderDependencyException(httpResponseUnauthorizedException);
+
+            throw await CreateAndLogCriticalDependencyException(failedAsteriskCallProviderDependencyException);
+        }
+        catch (HttpResponseForbiddenException httpResponseForbiddenException)
+        {
+            var failedAsteriskCallProviderDependencyException =
+                new FailedAsteriskCallProviderDependencyException(httpResponseForbiddenException);
+
+            throw await CreateAndLogCriticalDependencyException(failedAsteriskCallProviderDependencyException);
+        }
+        catch (HttpResponseNotFoundException httpResponseNotFoundException)
+        {
+            var failedAsteriskCallProviderDependencyException =
+                new FailedAsteriskCallProviderDependencyException(httpResponseNotFoundException);
+
+            throw await CreateAndLogCriticalDependencyException(failedAsteriskCallProviderDependencyException);
+        }
         catch (HttpRequestException httpRequestException)
-            when (httpRequestException.StatusCode is HttpStatusCode.Unauthorized
-                or HttpStatusCode.Forbidden
-                or HttpStatusCode.NotFound
-                or null)
         {
             var failedAsteriskCallProviderDependencyException =
                 new FailedAsteriskCallProviderDependencyException(httpRequestException);
 
             throw await CreateAndLogCriticalDependencyException(failedAsteriskCallProviderDependencyException);
         }
-        catch (HttpRequestException httpRequestException)
-            when (httpRequestException.StatusCode is HttpStatusCode.InternalServerError
-                or HttpStatusCode.ServiceUnavailable)
+        catch (HttpResponseInternalServerErrorException httpResponseInternalServerErrorException)
         {
             var failedAsteriskCallProviderDependencyException =
-                new FailedAsteriskCallProviderDependencyException(httpRequestException);
+                new FailedAsteriskCallProviderDependencyException(httpResponseInternalServerErrorException);
+
+            throw await CreateAndLogDependencyException(failedAsteriskCallProviderDependencyException);
+        }
+        catch (HttpResponseServiceUnavailableException httpResponseServiceUnavailableException)
+        {
+            var failedAsteriskCallProviderDependencyException =
+                new FailedAsteriskCallProviderDependencyException(httpResponseServiceUnavailableException);
+
+            throw await CreateAndLogDependencyException(failedAsteriskCallProviderDependencyException);
+        }
+        catch (HttpResponseException httpResponseException)
+        {
+            var failedAsteriskCallProviderDependencyException =
+                new FailedAsteriskCallProviderDependencyException(httpResponseException);
 
             throw await CreateAndLogDependencyException(failedAsteriskCallProviderDependencyException);
         }
