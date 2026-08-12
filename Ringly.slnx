@@ -6,6 +6,7 @@
   <Project Path="Ringly.CallCenter.Abstractions/Ringly.CallCenter.Abstractions.csproj" />
   <Project Path="Ringly.CallCenter.Asterisk.Tests.Unit/Ringly.CallCenter.Asterisk.Tests.Unit.csproj" />
   <Project Path="Ringly.CallCenter.Asterisk/Ringly.CallCenter.Asterisk.csproj" />
+  <Project Path="Ringly.Client.Abstractions/Ringly.Client.Abstractions.csproj" />
   <Project Path="Ringly.Storage.Abstractions/Ringly.Storage.Abstractions.csproj" />
   <Project Path="Ringly.Storage.AzureBlob.Tests.Unit/Ringly.Storage.AzureBlob.Tests.Unit.csproj" />
   <Project Path="Ringly.Storage.AzureBlob/Ringly.Storage.AzureBlob.csproj" />
