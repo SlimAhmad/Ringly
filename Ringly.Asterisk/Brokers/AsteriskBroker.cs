@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Reactive.Subjects;
 using System.Text;
@@ -10,8 +11,12 @@ namespace Ringly.Asterisk.Brokers;
 
 public partial class AsteriskBroker : IAsteriskBroker
 {
+    private static readonly TimeSpan InitialReconnectDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan MaxReconnectDelay = TimeSpan.FromSeconds(30);
+
     private readonly HttpClient ariClient;
     private readonly Subject<JsonElement> ariEvents;
+    private readonly Subject<IReadOnlyDictionary<string, string>> amiEvents;
     private readonly AsteriskOptions asteriskOptions;
 
     public AsteriskBroker(IOptions<AsteriskOptions> options)
@@ -31,7 +36,34 @@ public partial class AsteriskBroker : IAsteriskBroker
             new AuthenticationHeaderValue("Basic", credentials);
 
         this.ariEvents = new Subject<JsonElement>();
-        _ = this.ConnectAriEventsAsync(asteriskOptions);
+        this.amiEvents = new Subject<IReadOnlyDictionary<string, string>>();
+
+        // Independent reconnect loops per §5.9 — a dropped AMI connection must not kill the ARI stream.
+        _ = this.RunWithReconnectAsync(() => this.ConnectAriEventsAsync(asteriskOptions));
+        _ = this.RunWithReconnectAsync(() => this.ConnectAmiEventsAsync(asteriskOptions));
+    }
+
+    private async Task RunWithReconnectAsync(Func<Task> connectAsync)
+    {
+        TimeSpan delay = InitialReconnectDelay;
+
+        while (true)
+        {
+            try
+            {
+                await connectAsync();
+                delay = InitialReconnectDelay;
+            }
+            catch
+            {
+                // Connection dropped or failed to establish — retry with backoff below.
+                // Not business-exception handling: this keeps the reconnect loop alive per §5.9,
+                // it does not translate or suppress a domain-meaningful failure.
+            }
+
+            await Task.Delay(delay);
+            delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, MaxReconnectDelay.TotalSeconds));
+        }
     }
 
     private async Task ConnectAriEventsAsync(AsteriskOptions asteriskOptions)
@@ -56,6 +88,45 @@ public partial class AsteriskBroker : IAsteriskBroker
             messageStream.Seek(0, SeekOrigin.Begin);
             JsonElement ariEvent = await JsonSerializer.DeserializeAsync<JsonElement>(messageStream);
             this.ariEvents.OnNext(ariEvent);
+        }
+    }
+
+    private async Task ConnectAmiEventsAsync(AsteriskOptions asteriskOptions)
+    {
+        string host = new Uri(asteriskOptions.BaseUrl).Host;
+
+        using var tcpClient = new TcpClient();
+        await tcpClient.ConnectAsync(host, asteriskOptions.AmiPort);
+
+        await using NetworkStream stream = tcpClient.GetStream();
+        var writer = new StreamWriter(stream) { NewLine = "\r\n", AutoFlush = true };
+        var reader = new StreamReader(stream);
+
+        await writer.WriteAsync(
+            $"Action: Login\r\nUsername: {asteriskOptions.AmiUsername}\r\nSecret: {asteriskOptions.AmiSecret}\r\n\r\n");
+
+        var currentBlock = new Dictionary<string, string>();
+        string? line;
+
+        while ((line = await reader.ReadLineAsync()) is not null)
+        {
+            if (line.Length == 0)
+            {
+                if (currentBlock.Count > 0)
+                {
+                    this.amiEvents.OnNext(currentBlock);
+                    currentBlock = new Dictionary<string, string>();
+                }
+
+                continue;
+            }
+
+            int separatorIndex = line.IndexOf(':');
+
+            if (separatorIndex > 0)
+            {
+                currentBlock[line[..separatorIndex].Trim()] = line[(separatorIndex + 1)..].Trim();
+            }
         }
     }
 

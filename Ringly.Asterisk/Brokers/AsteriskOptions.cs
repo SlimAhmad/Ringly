@@ -8,4 +8,7 @@ public class AsteriskOptions
     public string StasisAppName { get; set; } = string.Empty;
     public string DialplanContext { get; set; } = string.Empty;
     public bool UseWebRtcTransport { get; set; } = true;
+    public int AmiPort { get; set; } = 5038;
+    public string AmiUsername { get; set; } = string.Empty;
+    public string AmiSecret { get; set; } = string.Empty;
 }
