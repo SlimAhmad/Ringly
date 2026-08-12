@@ -9,4 +9,6 @@ public partial interface IAsteriskBroker
     ValueTask UnpauseRecordingAsync(string recordingName);
     ValueTask StopRecordingAsync(string recordingName);
     ValueTask CancelRecordingAsync(string recordingName);
+    ValueTask DeleteStoredRecordingAsync(string recordingName);
+    ValueTask CopyStoredRecordingAsync(string recordingName, string destinationName);
 }
