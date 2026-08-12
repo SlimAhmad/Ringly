@@ -171,4 +171,10 @@ public partial class AsteriskBroker : IAsteriskBroker
         HttpResponseMessage response = await this.ariClient.PutAsJsonAsync(relativeUrl, content);
         response.EnsureSuccessStatusCode();
     }
+
+    private async ValueTask PostAsync<T>(string relativeUrl, T content)
+    {
+        HttpResponseMessage response = await this.ariClient.PostAsJsonAsync(relativeUrl, content);
+        response.EnsureSuccessStatusCode();
+    }
 }
