@@ -32,4 +32,10 @@ public partial class AsteriskBroker : IAsteriskBroker
 
         return (await response.Content.ReadFromJsonAsync<T>())!;
     }
+
+    private async ValueTask PostAsync(string relativeUrl)
+    {
+        HttpResponseMessage response = await this.ariClient.PostAsync(relativeUrl, content: null);
+        response.EnsureSuccessStatusCode();
+    }
 }
