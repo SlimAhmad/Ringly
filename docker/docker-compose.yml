@@ -37,5 +37,17 @@ services:
       - "10000-10099:10000-10099/udp"  # RTP media
     restart: unless-stopped
 
+  coturn:
+    build:
+      context: ./coturn
+      dockerfile: Dockerfile
+    ports:
+      - "3478:3478/tcp"   # STUN/TURN
+      - "3478:3478/udp"   # STUN/TURN
+      - "5349:5349/tcp"   # STUN/TURN over TLS (TURNS)
+      - "5349:5349/udp"   # STUN/TURN over TLS (TURNS)
+      - "49160-49200:49160-49200/udp"  # TURN relay media range
+    restart: unless-stopped
+
 volumes:
   postgres_data:

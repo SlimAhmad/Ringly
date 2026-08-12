@@ -16,6 +16,7 @@ public class SipSorceryCallClient : ICallClient, IDisposable
     private readonly Subject<CallClientEvent> events;
     private readonly Dictionary<string, SIPServerUserAgent> pendingIncomingCalls;
     private readonly Dictionary<string, RTCPeerConnection> activeMediaSessions;
+    private readonly RTCConfiguration rtcConfiguration;
 
     public SipSorceryCallClient(IOptions<SipSorceryCallOptions> options)
     {
@@ -23,6 +24,19 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         this.events = new Subject<CallClientEvent>();
         this.pendingIncomingCalls = [];
         this.activeMediaSessions = [];
+
+        this.rtcConfiguration = new RTCConfiguration
+        {
+            iceServers = this.options.IceServerUrls
+                .Select(url => new RTCIceServer
+                {
+                    urls = url,
+                    username = this.options.IceServerUsername,
+                    credential = this.options.IceServerCredential,
+                    credentialType = RTCIceCredentialType.password
+                })
+                .ToList()
+        };
 
         this.sipTransport = new SIPTransport();
         this.sipTransport.AddSIPChannel(new SIPClientWebSocketChannel());
@@ -60,7 +74,7 @@ public class SipSorceryCallClient : ICallClient, IDisposable
 
     public async ValueTask<CallHandle> PlaceCallAsync(string targetExtension)
     {
-        var mediaSession = new RTCPeerConnection();
+        var mediaSession = new RTCPeerConnection(this.rtcConfiguration);
 
         bool callResult = await this.userAgent.Call(
             targetExtension,
@@ -87,7 +101,7 @@ public class SipSorceryCallClient : ICallClient, IDisposable
             throw new InvalidOperationException($"No pending incoming call for handle '{handle.Id}'.");
         }
 
-        var mediaSession = new RTCPeerConnection();
+        var mediaSession = new RTCPeerConnection(this.rtcConfiguration);
         await this.userAgent.Answer(uas, mediaSession);
         this.activeMediaSessions[handle.Id] = mediaSession;
     }
