@@ -12,10 +12,12 @@ public partial class AsteriskBroker : IAsteriskBroker
 {
     private readonly HttpClient ariClient;
     private readonly Subject<JsonElement> ariEvents;
+    private readonly AsteriskOptions asteriskOptions;
 
     public AsteriskBroker(IOptions<AsteriskOptions> options)
     {
         AsteriskOptions asteriskOptions = options.Value;
+        this.asteriskOptions = asteriskOptions;
 
         this.ariClient = new HttpClient
         {
@@ -90,6 +92,12 @@ public partial class AsteriskBroker : IAsteriskBroker
     private async ValueTask DeleteAsync(string relativeUrl)
     {
         HttpResponseMessage response = await this.ariClient.DeleteAsync(relativeUrl);
+        response.EnsureSuccessStatusCode();
+    }
+
+    private async ValueTask PutAsync<T>(string relativeUrl, T content)
+    {
+        HttpResponseMessage response = await this.ariClient.PutAsJsonAsync(relativeUrl, content);
         response.EnsureSuccessStatusCode();
     }
 }
