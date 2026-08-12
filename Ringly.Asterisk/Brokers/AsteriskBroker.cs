@@ -172,6 +172,13 @@ public partial class AsteriskBroker : IAsteriskBroker
             cancellationToken: CancellationToken.None,
             deserailizationFunction: PassThroughDeserialization);
 
+    private async ValueTask PutAsync(string relativeUrl) =>
+        await this.apiClient.SendHttpRequestAsync(
+            method: "PUT",
+            relativeUrl: relativeUrl,
+            cancellationToken: CancellationToken.None,
+            deserailizationFunction: PassThroughDeserialization);
+
     private async ValueTask PutAsync<T>(string relativeUrl, T content) =>
         await this.apiClient.SendHttpRequestAsync<T, string>(
             method: "PUT",
