@@ -7,19 +7,19 @@ namespace Ringly.Asterisk.Brokers;
 
 public partial class AsteriskBroker
 {
-    private const string StasisStartEventType = "StasisStart";
+    private const string CallBroadcastEventType = "CallBroadcast";
     private const string ClaimRelativeUrl = "events/claim";
     private const string AsteriskVariableRelativeUrl = "asterisk/variable";
 
     public IObservable<CallBroadcastEvent> StreamCallBroadcasts() =>
         this.ariEvents
-            .Where(IsStasisStart)
+            .Where(IsCallBroadcast)
             .Select(MapToCallBroadcastEvent);
 
     public async ValueTask<ClaimResult> ClaimCallAsync(string channelId, string agentAppName)
     {
         HttpResponseMessage response = await this.ariClient.PostAsync(
-            $"{ClaimRelativeUrl}?channelId={Uri.EscapeDataString(channelId)}&app={Uri.EscapeDataString(agentAppName)}",
+            $"{ClaimRelativeUrl}?channelId={Uri.EscapeDataString(channelId)}&application={Uri.EscapeDataString(agentAppName)}",
             content: null);
 
         if (response.StatusCode == HttpStatusCode.Conflict)
@@ -40,9 +40,9 @@ public partial class AsteriskBroker
     private static string AgentAvailabilityVariableName(string agentAppName) =>
         $"AGENT_AVAILABLE_{agentAppName}";
 
-    private static bool IsStasisStart(JsonElement ariEvent) =>
+    private static bool IsCallBroadcast(JsonElement ariEvent) =>
         ariEvent.TryGetProperty("type", out JsonElement type) &&
-        type.GetString() == StasisStartEventType;
+        type.GetString() == CallBroadcastEventType;
 
     private static CallBroadcastEvent MapToCallBroadcastEvent(JsonElement ariEvent)
     {
@@ -52,15 +52,13 @@ public partial class AsteriskBroker
         {
             ChannelId = channel.GetProperty("id").GetString() ?? string.Empty,
 
-            CallerNumber = channel.TryGetProperty("caller", out JsonElement caller) &&
-                caller.TryGetProperty("number", out JsonElement number)
-                    ? number.GetString() ?? string.Empty
-                    : string.Empty,
+            CallerNumber = ariEvent.TryGetProperty("caller", out JsonElement caller)
+                ? caller.GetString() ?? string.Empty
+                : string.Empty,
 
-            CalledExtension = channel.TryGetProperty("dialplan", out JsonElement dialplan) &&
-                dialplan.TryGetProperty("exten", out JsonElement exten)
-                    ? exten.GetString() ?? string.Empty
-                    : string.Empty,
+            CalledExtension = ariEvent.TryGetProperty("called", out JsonElement called)
+                ? called.GetString() ?? string.Empty
+                : string.Empty,
 
             ChannelVars = channel.TryGetProperty("channelvars", out JsonElement channelVars)
                 ? channelVars.EnumerateObject().ToDictionary(
