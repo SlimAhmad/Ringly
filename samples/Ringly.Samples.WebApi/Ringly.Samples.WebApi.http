@@ -1,0 +1,24 @@
+@Ringly.Samples.WebApi_HostAddress = http://localhost:5000
+
+### Create a queue
+POST {{Ringly.Samples.WebApi_HostAddress}}/queues
+Content-Type: application/json
+
+{
+  "name": "support"
+}
+
+### Provision a client
+POST {{Ringly.Samples.WebApi_HostAddress}}/clients/11111111-1111-1111-1111-111111111111/provision
+
+### Start a call between two known parties
+POST {{Ringly.Samples.WebApi_HostAddress}}/calls
+Content-Type: application/json
+
+{
+  "partyAExtension": "1000",
+  "partyBExtension": "1001"
+}
+
+### Route a cold support request into a queue (needs a prior /provision call for this clientId)
+POST {{Ringly.Samples.WebApi_HostAddress}}/support/11111111-1111-1111-1111-111111111111/route?queueName=support
