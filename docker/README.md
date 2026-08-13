@@ -41,6 +41,13 @@ Verified locally: `turnutils_stunclient` returns a reflexive address; `turnutils
 
 **ICE config wiring** — `Ringly.Client.SipSorcery`'s `SipSorceryCallOptions` now has `IceServerUrls`/`IceServerUsername`/`IceServerCredential`; `SipSorceryCallClient` builds an `RTCConfiguration` from them and passes it into every `RTCPeerConnection` it creates.
 
+## SIP trunk provider (§8.7, row #28)
+
+Configuring a real SIP trunk (PSTN masked-calling fallback) needs a real external provider
+account that can't be stood up in this repo — see [trunk-provider-setup.md](trunk-provider-setup.md)
+for the deployment checklist (provider-side spend cap/whitelist, and why no static `pjsip.conf`
+trunk stanza is needed given the realtime PJSIP backend below).
+
 ## Not included yet
 
 - Realtime PJSIP backend (§6 item 8) — Done, see row 19b in Ringly-Reference.md.
