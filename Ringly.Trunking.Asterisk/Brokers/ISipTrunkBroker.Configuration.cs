@@ -5,5 +5,6 @@ namespace Ringly.Trunking.Asterisk.Brokers;
 public partial interface ISipTrunkBroker
 {
     ValueTask ConfigureTrunkAsync(SipTrunkConfig config);
+    ValueTask<SipTrunkConfig> RetrieveTrunkConfigAsync(string trunkName);
     ValueTask RemoveTrunkAsync(string trunkName);
 }

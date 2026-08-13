@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Ringly.Trunking.Abstractions.Models;
 using Ringly.Trunking.Asterisk.Models;
 using RESTFulSense.Exceptions;
@@ -6,6 +7,15 @@ namespace Ringly.Trunking.Asterisk.Brokers;
 
 public partial class SipTrunkBroker
 {
+    // §8.4's validation flow needs to read back the business-rule fields of a previously
+    // configured trunk (spend caps, allowed destinations, etc.) — Asterisk's PJSIP objects have
+    // no concept of these, only raw SIP protocol config, so there's nowhere in Asterisk itself
+    // to persist or retrieve them. Not doc-specified where this should live; an in-memory store
+    // is a reasonable default for a single-process deployment, but does NOT survive a restart —
+    // a durable store (e.g. a database-backed config table) is a real gap, confirm before
+    // shipping anything that depends on trunk config surviving process restarts.
+    private readonly ConcurrentDictionary<string, SipTrunkConfig> trunkConfigs = new();
+
     // configClass is "res_pjsip" (the sorcery module name), not "pjsip" — confirmed against
     // Asterisk's own res/ari/resource_asterisk.c (row #21).
     private const string PjsipConfigRelativeUrlFormat = "asterisk/config/dynamic/res_pjsip/{0}/{1}";
@@ -48,7 +58,14 @@ public partial class SipTrunkBroker
             new ConfigTuple { Attribute = "outbound_auth", Value = config.TrunkName },
             new ConfigTuple { Attribute = "identify_by", Value = "ip,username" }
         ]);
+
+        this.trunkConfigs[config.TrunkName] = config;
     }
+
+    public ValueTask<SipTrunkConfig> RetrieveTrunkConfigAsync(string trunkName) =>
+        this.trunkConfigs.TryGetValue(trunkName, out SipTrunkConfig? config)
+            ? ValueTask.FromResult(config)
+            : throw new HttpResponseNotFoundException();
 
     public async ValueTask RemoveTrunkAsync(string trunkName)
     {
@@ -69,6 +86,8 @@ public partial class SipTrunkBroker
                 // ConfigureTrunkAsync's comment) — this keeps cleanup from failing on it.
             }
         }
+
+        this.trunkConfigs.TryRemove(trunkName, out _);
     }
 
     private async ValueTask PutPjsipConfigAsync(string objectType, string id, IReadOnlyList<ConfigTuple> fields)
