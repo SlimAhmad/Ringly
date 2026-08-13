@@ -15,9 +15,19 @@ the other through Asterisk. One instance plays "rider," the other "driver."
 cd ../../docker && docker compose up -d   # local Asterisk + coturn stack
 ```
 
-Two SIP extensions to register as — the docker stack seeds `1000`/`ringly-dev-1000`;
-provision a second one via `Ringly.Samples.WebApi`'s `POST /clients/{clientId}/provision`,
-or add a second static entry yourself.
+Two SIP extensions to register as — the docker stack seeds both directly (via
+`docker/asterisk/seed-test-endpoint.sql`, applied automatically on a fresh
+`docker compose up -d`), so no provisioning step is needed for this demo:
+
+| Extension | Password |
+|---|---|
+| `1000` | `ringly-dev-1000` |
+| `1001` | `ringly-dev-1001` |
+
+(`Ringly.Samples.WebApi`'s `POST /clients/{clientId}/provision` endpoint also
+exists for provisioning further extensions dynamically, but currently fails
+against a real Asterisk instance — see that sample's README for why. The two
+extensions above are seeded a different way that isn't affected.)
 
 `MauiProgram.cs`'s `SipSorceryCallOptions.RegistrarHost` defaults to
 `localhost:8089;transport=wss` (Asterisk's WSS port) — see the comment there for
@@ -65,7 +75,7 @@ Microsoft publishes the missing package.
 
 1. Build and run two instances of the Windows app (or one Windows + one Android).
 2. In instance A: enter extension `1000`, password `ringly-dev-1000`, tap **Register**.
-3. In instance B: enter a second provisioned extension/password, tap **Register**.
+3. In instance B: enter extension `1001`, password `ringly-dev-1001`, tap **Register**.
 4. In instance A: enter instance B's extension in "Extension to call," tap **Call**.
 5. Instance B's event log shows `IncomingCall` — tap **Answer**.
 6. Both instances now show `CallAnswered` — a real, connected SIP call, ready for

@@ -11,7 +11,8 @@ docker compose up -d
 
 ## What's configured (§6 checklist items 1–5)
 
-- `pjsip.conf` — `transport-wss` (WebRTC/mobile) + `transport-udp`, plus a static smoke-test endpoint (`1000` / `ringly-dev-1000`) with `webrtc=yes` and `set_var=PJSIP_TRANSFER_HANDLING()=ari-only`
+- `pjsip.conf` — `transport-wss` (WebRTC/mobile) + `transport-udp`. No static endpoints —
+  those are seeded into the realtime backend instead, see below.
 - `extensions.conf` — `ride_hailing`/`call_center` Stasis handoff contexts
 - `http.conf` — built-in HTTP server (8088 plain / 8089 TLS), which ARI and WSS both ride on
 - `ari.conf` — ARI user `ringly` / `ringly-dev-ari`, `channelvars` for StasisBroadcast routing
@@ -20,10 +21,33 @@ docker compose up -d
 
 **All dev-only credentials** — replace before any non-local deployment.
 
+## Seeded test extensions
+
+PJSIP objects are realtime (backed by Postgres, row #19b), not static `pjsip.conf`
+entries. The `migrate` service applies both the schema (Asterisk's own Alembic
+migrations) and `docker/asterisk/seed-test-endpoint.sql` automatically on every
+`docker compose up -d` (idempotent — safe to run against an already-seeded
+database, not just a fresh one). Two ready-to-use extensions, both in the
+`ride_hailing` dialplan context:
+
+| Extension | Password |
+|---|---|
+| `1000` | `ringly-dev-1000` |
+| `1001` | `ringly-dev-1001` |
+
+Used by `samples/Ringly.Samples.Maui`'s two-instance call demo. Seeding directly
+into the realtime tables like this sidesteps a confirmed upstream Asterisk bug
+([asterisk/asterisk#1655](https://github.com/asterisk/asterisk/issues/1655)) that
+blocks PJSIP `endpoint` object creation through Asterisk's own dynamic-config ARI
+PUT — the path `Ringly.Asterisk`'s `CallProvisioningService` uses, which is why
+that path still doesn't work end-to-end against this stack (see
+`samples/Ringly.Samples.WebApi`'s README).
+
 ## Verified locally
 
 ```bash
 docker compose exec asterisk asterisk -rx "pjsip show endpoint 1000"
+docker compose exec asterisk asterisk -rx "pjsip show endpoint 1001"
 docker compose exec asterisk asterisk -rx "http show status"
 docker compose exec asterisk asterisk -rx "dialplan show ride_hailing"
 docker compose exec asterisk asterisk -rx "manager show users"
