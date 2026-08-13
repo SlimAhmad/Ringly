@@ -23,6 +23,7 @@ COPY config/logger.conf /etc/asterisk/
 COPY config/res_pgsql.conf /etc/asterisk/
 COPY config/extconfig.conf /etc/asterisk/
 COPY config/sorcery.conf /etc/asterisk/
+COPY config/websocket_client.conf /etc/asterisk/
 
 RUN chown -R asterisk:asterisk /etc/asterisk/
 
