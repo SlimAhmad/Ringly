@@ -1,9 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.0" />
+    <!-- TwilioWebhookController needs ASP.NET Core MVC types (ControllerBase, [ApiController],
+         IActionResult) even though this is a plain class library, not a web app — the
+         consuming app's own host wires this controller into its pipeline. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Microsoft.Extensions.Options comes in transitively via the AspNetCore.App
+         FrameworkReference above — no explicit PackageReference needed. -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="RESTFulSense" Version="3.2.0" />
+    <PackageReference Include="System.Reactive" Version="7.0.0" />
   </ItemGroup>
 
   <ItemGroup>
