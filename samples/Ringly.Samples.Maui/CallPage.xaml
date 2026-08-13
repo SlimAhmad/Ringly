@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Ringly.Samples.Maui.CallPage"
+             Title="Ringly Call Sample">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="20" Spacing="16">
+
+            <Label Text="Ringly.Client.SipSorcery — end-to-end call demo"
+                   FontSize="18" FontAttributes="Bold" />
+            <Label Text="Run two instances of this app (e.g. two Windows windows, or Windows + Android) — register each as a different extension, then place a call from one to the other." />
+
+            <BoxView HeightRequest="1" Color="LightGray" />
+
+            <Label Text="1. Register" FontAttributes="Bold" />
+            <Entry x:Name="ExtensionEntry" Placeholder="Your extension (e.g. 1000)" />
+            <Entry x:Name="PasswordEntry" Placeholder="Your password" IsPassword="True" />
+            <Button Text="Register" Clicked="OnRegisterClicked" />
+            <Label x:Name="RegistrationStatusLabel" Text="Not registered" TextColor="Gray" />
+
+            <BoxView HeightRequest="1" Color="LightGray" />
+
+            <Label Text="2. Place a call" FontAttributes="Bold" />
+            <Entry x:Name="TargetExtensionEntry" Placeholder="Extension to call (e.g. 1001)" />
+            <Button Text="Call" Clicked="OnCallClicked" />
+            <Button Text="Hang Up" Clicked="OnHangupClicked" />
+
+            <BoxView HeightRequest="1" Color="LightGray" />
+
+            <Label x:Name="IncomingCallLabel" Text="Incoming call..." IsVisible="False"
+                   FontAttributes="Bold" TextColor="OrangeRed" />
+            <HorizontalStackLayout x:Name="IncomingCallButtons" IsVisible="False" Spacing="12">
+                <Button Text="Answer" Clicked="OnAnswerClicked" />
+                <Button Text="Decline" Clicked="OnDeclineClicked" />
+            </HorizontalStackLayout>
+
+            <BoxView HeightRequest="1" Color="LightGray" />
+
+            <Label Text="Event log" FontAttributes="Bold" />
+            <CollectionView x:Name="EventLogView" HeightRequest="240">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate>
+                        <Label Text="{Binding .}" FontSize="12" />
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>

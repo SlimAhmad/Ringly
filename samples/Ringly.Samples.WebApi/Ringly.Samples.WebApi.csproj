@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Ringly.Abstractions\Ringly.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Ringly.Asterisk\Ringly.Asterisk.csproj" />
+    <ProjectReference Include="..\..\Ringly.CallCenter.Abstractions\Ringly.CallCenter.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Ringly.CallCenter.Asterisk\Ringly.CallCenter.Asterisk.csproj" />
+  </ItemGroup>
+
+</Project>

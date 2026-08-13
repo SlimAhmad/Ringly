@@ -72,6 +72,13 @@ center queue, and starting a call.
 Each package group also has its own doc with a DI registration snippet and minimal
 usage example — see the table above.
 
+## Sample apps
+
+**[samples/](samples)** has three runnable apps: an ASP.NET Core Web API
+(Asterisk backend), a console app (Twilio backend), and a MAUI client
+(Android + Windows) placing a real end-to-end call between two registered
+clients. See [samples/README.md](samples/README.md).
+
 ## Local development stack
 
 `docker/README.md` documents a full local Asterisk + coturn (STUN/TURN) stack, plus
