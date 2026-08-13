@@ -1,3 +1,4 @@
+using System.Net;
 using System.Reactive.Subjects;
 using Microsoft.Extensions.Options;
 using Ringly.Client.Abstractions;
@@ -17,6 +18,7 @@ public class SipSorceryCallClient : ICallClient, IDisposable
     private readonly Dictionary<string, SIPServerUserAgent> pendingIncomingCalls;
     private readonly Dictionary<string, RTCPeerConnection> activeMediaSessions;
     private readonly RTCConfiguration rtcConfiguration;
+    private SipCredentials? registeredCredentials;
 
     public SipSorceryCallClient(IOptions<SipSorceryCallOptions> options)
     {
@@ -41,6 +43,17 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         this.sipTransport = new SIPTransport();
         this.sipTransport.AddSIPChannel(new SIPClientWebSocketChannel());
 
+        // SIPSorcery's SIPClientWebSocketChannel always connects to the WS server's root path
+        // ("/") with no way to target a sub-path — confirmed in its source (SendAsync/
+        // SendSecureAsync build the URI purely from "ws(s)://{endpoint}", never a path).
+        // Asterisk's WebSocket transport is hardcoded to "/ws" (res_http_websocket), so pure
+        // WS/WSS registrations against Asterisk 404 outright; there is no RegistrarHost format
+        // that reconciles the two. UDP has no such path concept, so it's added as a fallback
+        // transport — set RegistrarHost without ";transport=ws(s)" (or with ";transport=udp")
+        // to use it, which is what native clients (unlike browsers, which lack raw socket
+        // access and need WS) should generally prefer against Asterisk anyway.
+        this.sipTransport.AddSIPChannel(new SIPUDPChannel(IPAddress.Any, 0));
+
         this.userAgent = new SIPUserAgent(this.sipTransport, null);
 
         this.userAgent.OnIncomingCall += this.HandleIncomingCall;
@@ -62,7 +75,10 @@ public class SipSorceryCallClient : ICallClient, IDisposable
             this.options.RegistrationExpirySeconds);
 
         registrationAgent.RegistrationSuccessful += (uri, response) =>
+        {
+            this.registeredCredentials = credentials;
             registrationCompletionSource.TrySetResult();
+        };
 
         registrationAgent.RegistrationFailed += (uri, response, errorMessage) =>
             registrationCompletionSource.TrySetException(new InvalidOperationException(errorMessage));
@@ -76,10 +92,22 @@ public class SipSorceryCallClient : ICallClient, IDisposable
     {
         var mediaSession = new RTCPeerConnection(this.rtcConfiguration);
 
+        // A bare extension (e.g. "1001") is not a resolvable SIP destination on its own — with
+        // no "@domain" part, SIPSorcery's URI resolution falls back to legacy dotted-decimal
+        // integer parsing (observed: "1001" resolved to IP 0.0.3.233, since 1001 as a raw
+        // 32-bit value is 0.0.3.233 in dotted-decimal), then just times out. Qualifying it
+        // against the same host used for registration routes it through Asterisk correctly.
+        string registrarHost = this.options.RegistrarHost.Split(';')[0];
+        string destination = $"sip:{targetExtension}@{registrarHost}";
+
+        // Asterisk challenges the INVITE for authentication the same way it challenges REGISTER
+        // (confirmed: an unauthenticated Call() gets "Authentication requested when no
+        // credentials available") — reusing the credentials this client last registered with
+        // answers that challenge the same way SIPRegistrationUserAgent does internally.
         bool callResult = await this.userAgent.Call(
-            targetExtension,
-            username: null,
-            password: null,
+            destination,
+            username: this.registeredCredentials?.Extension,
+            password: this.registeredCredentials?.Password,
             mediaSession);
 
         if (!callResult)

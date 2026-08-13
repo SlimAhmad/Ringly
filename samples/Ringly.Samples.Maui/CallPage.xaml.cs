@@ -62,6 +62,9 @@ public partial class CallPage : ContentPage
 
     private async void OnRegisterClicked(object? sender, EventArgs e)
     {
+        this.RegistrationStatusLabel.Text = "Registering...";
+        this.RegistrationStatusLabel.TextColor = Colors.Orange;
+
         try
         {
             await this.callClient.RegisterAsync(new SipCredentials

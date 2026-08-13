@@ -30,9 +30,23 @@ against a real Asterisk instance — see that sample's README for why. The two
 extensions above are seeded a different way that isn't affected.)
 
 `MauiProgram.cs`'s `SipSorceryCallOptions.RegistrarHost` defaults to
-`localhost:8089;transport=wss` (Asterisk's WSS port) — see the comment there for
-what to change it to on Android (`10.0.2.2` for the emulator, your LAN IP for a
-real device).
+`localhost:5060` (Asterisk's plain UDP SIP port, `transport-udp` in
+`docker/asterisk/config/pjsip.conf`) — see the comment there for what to change
+it to on Android (`10.0.2.2` for the emulator, your LAN IP for a real device).
+
+**Why UDP and not WS/WSS**: both were tried and confirmed broken against this
+Asterisk setup. `wss:8089` fails with `SSLHandshakeException`/`CertificateException`
+on Android — Asterisk's `transport-wss` uses the self-signed dev cert
+`docker/asterisk/Dockerfile` generates, and Android's platform TLS stack (like any
+correctly-behaving TLS stack) rejects it outright. `ws:8088` fails with an HTTP 404
+on the WebSocket handshake — `Ringly.Client.SipSorcery`'s `SIPClientWebSocketChannel`
+(from the SIPSorcery library) always connects to the server's root path `/` with no
+way to target a sub-path, while Asterisk's WebSocket transport is hardcoded to `/ws`
+(`res_http_websocket`) — the two can never agree on a path, confirmed by reading
+SIPSorcery's own source. Native clients don't need WS anyway — it exists so browsers
+(which lack raw socket access) can carry SIP over HTTP — so plain UDP, which
+`Ringly.Client.SipSorcery` also registers a channel for, is the correct choice here
+and just works.
 
 ## Build
 
@@ -84,3 +98,37 @@ Microsoft publishes the missing package.
 A call can also arrive from `Ringly.Samples.WebApi`'s `POST /calls` endpoint
 (`ICallProvider.StartCallSessionAsync` server-originates channels to both
 extensions) — the same Answer/Hangup UI handles that origin path too.
+
+## Verified against a real Android emulator
+
+Registration is confirmed working end to end, not just "should work": built in
+Release, installed on a Pixel 9 Pro API 36 emulator, registered as `1000` against
+the local Docker Asterisk stack, and independently confirmed on the server side
+via `asterisk -rx "pjsip show contacts"` showing a live
+`1000/sip:10.0.2.16:57332` binding. Two real bugs surfaced and were fixed along
+the way (both in `Ringly.Client.SipSorcery/SipSorceryCallClient.cs`, not this
+sample):
+
+- **Call target resolution**: `PlaceCallAsync` was passing the bare extension
+  (e.g. `"1001"`) straight to SIPSorcery's `Call()`. With no `@domain` part, its
+  URI resolution fell back to legacy dotted-decimal integer parsing — `"1001"`
+  silently resolved to IP `0.0.3.233` (1001 read as a raw 32-bit value) and the
+  call went nowhere. Fixed by qualifying the target against the same registrar
+  host used for registration (`sip:{extension}@{registrarHost}`).
+- **Call authentication**: once resolution was fixed, Asterisk challenged the
+  INVITE the same way it challenges REGISTER (`Authentication requested when no
+  credentials available`) and the call still failed. Fixed by having the client
+  remember the credentials from its last successful `RegisterAsync` and reuse
+  them to answer the INVITE's auth challenge too.
+
+With both fixes in, a call from a registered `1000` to extension `1001` (not
+registered by anything in this test) now correctly reaches Asterisk, passes
+authentication, and gets a real SIP response — `100 Trying` then
+`488 Not Acceptable Here`, most likely a WebRTC media/SDP capability mismatch
+between SIPSorcery's `RTCPeerConnection`-based offer and the PJSIP endpoint's
+realtime config (`docker/asterisk/seed-test-endpoint.sql`) rather than a
+signaling problem — signaling (registration, routing, auth) is proven working;
+a full two-instance answered call with audio has not yet been verified and is
+the natural next step (needs a second real registered listener to test against,
+plus likely a `webrtc`/`media_encryption`/ICE-related tweak to the endpoint
+config in the seed SQL).
