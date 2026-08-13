@@ -49,5 +49,116 @@ services:
       - "49160-49200:49160-49200/udp"  # TURN relay media range
     restart: unless-stopped
 
+  # Row #38c — Dograh (self-hosted, ghcr.io/dograh-hq), vendored here so anyone cloning this
+  # repo gets a working instance rather than a personal machine-specific one. Gated behind the
+  # "dograh" profile (opt-in via `docker compose --profile dograh up -d`) — the AI agent path is
+  # a stretch feature per §11.5, not part of the base stack. Every service here joins the same
+  # default Compose network as `asterisk`, so container-name resolution (`asterisk`, `dograh-api`)
+  # works both directions without any extra network wiring.
+  #
+  # Dev-only secrets below, same "replace before any non-local deployment" convention as the rest
+  # of this file. If you already run a separate Dograh instance elsewhere, stop it first — this
+  # profile publishes the same default host ports (8000 API / 3010 UI).
+  dograh-postgres:
+    image: pgvector/pgvector:pg17
+    profiles: ["dograh"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: dograh-dev-postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - dograh_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  dograh-redis:
+    image: redis:7
+    profiles: ["dograh"]
+    command: ["--requirepass", "dograh-dev-redis"]
+    volumes:
+      - dograh_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "dograh-dev-redis", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+
+  dograh-minio:
+    image: minio/minio
+    profiles: ["dograh"]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: dograh-dev-minio
+      MINIO_ROOT_PASSWORD: dograh-dev-minio-secret
+      MINIO_API_CORS_ALLOW_ORIGIN: "*"
+    volumes:
+      - dograh_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  dograh-api:
+    image: ghcr.io/dograh-hq/dograh-api:latest
+    profiles: ["dograh"]
+    environment:
+      ENVIRONMENT: local
+      LOG_LEVEL: INFO
+      DATABASE_URL: postgresql+asyncpg://postgres:dograh-dev-postgres@dograh-postgres:5432/postgres
+      REDIS_URL: redis://:dograh-dev-redis@dograh-redis:6379
+      MINIO_ENDPOINT: dograh-minio:9000
+      MINIO_PUBLIC_ENDPOINT: http://localhost:9000
+      MINIO_ACCESS_KEY: dograh-dev-minio
+      MINIO_SECRET_KEY: dograh-dev-minio-secret
+      MINIO_BUCKET: voice-audio
+      MINIO_SECURE: "false"
+      ENABLE_AWS_S3: "false"
+      FASTAPI_WORKERS: "1"
+      # Trust nginx/host-forwarded headers — no reverse proxy in local dev, but this keeps
+      # webhook signature checks from silently failing if one is added later (see Dograh's own
+      # compose file comment on this exact setting).
+      FORWARDED_ALLOW_IPS: "*"
+      ENABLE_TELEMETRY: "false"
+      # Dev-only — replace before any non-local deployment.
+      OSS_JWT_SECRET: dograh-dev-oss-jwt-secret-change-me
+    ports:
+      - "8000:8000"
+    depends_on:
+      dograh-postgres:
+        condition: service_healthy
+      dograh-redis:
+        condition: service_healthy
+      dograh-minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health').read()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  dograh-ui:
+    image: ghcr.io/dograh-hq/dograh-ui:latest
+    profiles: ["dograh"]
+    environment:
+      HOSTNAME: "0.0.0.0"
+      BACKEND_URL: http://dograh-api:8000
+      NODE_ENV: oss
+      ENABLE_TELEMETRY: "false"
+    ports:
+      - "3010:3010"
+    depends_on:
+      dograh-api:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  dograh_postgres_data:
+  dograh_redis_data:
+  dograh_minio_data:
