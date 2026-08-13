@@ -15,5 +15,6 @@ RUN git clone --depth 1 --filter=blob:none --sparse https://github.com/asterisk/
 
 WORKDIR /src/contrib/ast-db-manage
 COPY config.ini ./config.ini
+COPY apply_seed.py /apply_seed.py
 
-CMD ["alembic", "-c", "config.ini", "upgrade", "head"]
+CMD alembic -c config.ini upgrade head && python /apply_seed.py

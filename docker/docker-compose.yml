@@ -21,6 +21,10 @@ services:
       postgres:
         condition: service_healthy
     restart: "no"
+    volumes:
+      # Mounted, not baked into the image, so editing the seed file doesn't need a
+      # rebuild — see docker/migrate/apply_seed.py.
+      - ./asterisk/seed-test-endpoint.sql:/seed/seed-test-endpoint.sql:ro
 
   asterisk:
     build:
