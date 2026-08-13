@@ -23,6 +23,14 @@ public partial class TwilioCallProvider
         {
             throw await CreateAndLogValidationException(invalidCallParticipantException);
         }
+        catch (InvalidRouteToQueueRequestException invalidRouteToQueueRequestException)
+        {
+            throw await CreateAndLogValidationException(invalidRouteToQueueRequestException);
+        }
+        catch (NotFoundSipCredentialsException notFoundSipCredentialsException)
+        {
+            throw await CreateAndLogValidationException(notFoundSipCredentialsException);
+        }
         catch (HttpResponseBadRequestException)
         {
             var invalidCallParticipantException = new InvalidCallParticipantException();

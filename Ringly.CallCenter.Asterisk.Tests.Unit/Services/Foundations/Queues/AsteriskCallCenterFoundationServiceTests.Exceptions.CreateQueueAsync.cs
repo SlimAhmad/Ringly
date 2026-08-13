@@ -42,6 +42,7 @@ public partial class AsteriskCallCenterFoundationServiceTests
                 Times.Once);
 
         this.asteriskBrokerMock.VerifyNoOtherCalls();
+        this.queueRegistryMock.VerifyNoOtherCalls();
         this.loggingBrokerMock.VerifyNoOtherCalls();
     }
 
@@ -79,6 +80,7 @@ public partial class AsteriskCallCenterFoundationServiceTests
                 Times.Once);
 
         this.asteriskBrokerMock.VerifyNoOtherCalls();
+        this.queueRegistryMock.VerifyNoOtherCalls();
         this.loggingBrokerMock.VerifyNoOtherCalls();
     }
 
@@ -127,6 +129,7 @@ public partial class AsteriskCallCenterFoundationServiceTests
                 Times.Once);
 
         this.asteriskBrokerMock.VerifyNoOtherCalls();
+        this.queueRegistryMock.VerifyNoOtherCalls();
         this.loggingBrokerMock.VerifyNoOtherCalls();
     }
 
@@ -173,6 +176,7 @@ public partial class AsteriskCallCenterFoundationServiceTests
                 Times.Once);
 
         this.asteriskBrokerMock.VerifyNoOtherCalls();
+        this.queueRegistryMock.VerifyNoOtherCalls();
         this.loggingBrokerMock.VerifyNoOtherCalls();
     }
 
@@ -212,6 +216,7 @@ public partial class AsteriskCallCenterFoundationServiceTests
                 Times.Once);
 
         this.asteriskBrokerMock.VerifyNoOtherCalls();
+        this.queueRegistryMock.VerifyNoOtherCalls();
         this.loggingBrokerMock.VerifyNoOtherCalls();
     }
 }

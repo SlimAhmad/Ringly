@@ -35,7 +35,14 @@ public partial class AsteriskCallCenterFoundationServiceTests
             broker.InsertBridgeAsync("holding"),
                 Times.Once);
 
+        this.queueRegistryMock.Verify(registry =>
+            registry.RegisterAsync(It.Is<HoldingBridge>(holdingBridge =>
+                holdingBridge.BridgeId == expectedHoldingBridge.BridgeId &&
+                holdingBridge.QueueName == expectedHoldingBridge.QueueName)),
+                    Times.Once);
+
         this.asteriskBrokerMock.VerifyNoOtherCalls();
+        this.queueRegistryMock.VerifyNoOtherCalls();
         this.loggingBrokerMock.VerifyNoOtherCalls();
     }
 }

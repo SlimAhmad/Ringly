@@ -23,6 +23,18 @@ public partial class AsteriskCallFoundationService
         {
             throw await CreateAndLogValidationException(invalidCallParticipantException);
         }
+        catch (InvalidRouteToQueueRequestException invalidRouteToQueueRequestException)
+        {
+            throw await CreateAndLogValidationException(invalidRouteToQueueRequestException);
+        }
+        catch (NotFoundSipCredentialsException notFoundSipCredentialsException)
+        {
+            throw await CreateAndLogValidationException(notFoundSipCredentialsException);
+        }
+        catch (NotFoundQueueException notFoundQueueException)
+        {
+            throw await CreateAndLogValidationException(notFoundQueueException);
+        }
         catch (HttpResponseBadRequestException)
         {
             var invalidCallParticipantException = new InvalidCallParticipantException();
