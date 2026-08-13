@@ -136,16 +136,35 @@ With all three fixes in, a call from a registered `1000` to extension `1001`
 authenticates, negotiates real SDP (`100 Trying`, offer accepted, no more
 `488`), and enters Asterisk's `ride_hailing` dialplan → `Stasis` app —
 confirmed via `pjsip set logger on`. From there it depends on
-`Ringly.Samples.WebApi` running (it hosts the `ride_hailing_app` ARI/Stasis
-application Asterisk routes into) to actually bridge the call to `1001`'s
-channel — the WebApi sample's own ARI event handling currently only
-originates calls started via its own `POST /calls` endpoint
-(`ICallProvider.StartCallSessionAsync`), not organically client-dialed ones
-that arrive by a caller entering the Stasis app directly. Auto-bridging a
-client-dialed Stasis entry to the target extension is real, additional
-call-routing logic, not yet implemented — the next concrete step, and a
-different chunk of work from anything above it (signaling, routing, and media
-negotiation are all now proven working end to end).
+`Ringly.Samples.WebApi` running: its `RideHailingCallRouter` (see that
+sample's own README) answers and bridges the caller, then originates a
+channel to the dialed extension and bridges that in too. Two more real bugs
+surfaced and were fixed getting this far:
+
+- **Wrong ARI channel-origination format**: `AsteriskCallFoundationService`
+  (used by both `StartCallSessionAsync`/`POST /calls` and the new router) was
+  passing bare extensions straight to ARI's `/channels?endpoint=` — Asterisk
+  rejects that outright with `400 Invalid endpoint specified`; it needs a
+  `Tech/Resource` string like `PJSIP/1000`. A prior code comment claiming this
+  was "acceptance-tested" without the prefix was simply wrong — no such test
+  existed. Fixed in `Ringly.Asterisk`, with the affected unit tests updated
+  to match.
+- **Bridging a not-yet-answered channel**: `StartCallSessionAsync` originated
+  both channels then immediately tried to bridge them, but ARI rejects
+  `bridges/{id}/addChannel` with `"Channel not in Stasis application"` until
+  a channel actually answers and enters Stasis — confirmed against a real
+  instance. Fixed by waiting for each channel's own `StasisStart` event
+  (`IAsteriskBroker.StreamStasisStartEvents()`, new) before bridging it.
+
+Verified: dialing from a registered `1000` to `1001` (with nothing registered
+as `1001`) now shows the router answering and bridging the caller, then
+cleanly catching and logging the expected origination failure for the
+unreachable target — no crash, no silent hang, no more the caller just being
+parked with nothing happening. Signaling, routing, media negotiation, and
+now call bridging are all proven working end to end. What's left is a fully
+answered call between two live parties, which needs a second real registered
+client to test against — either a second device or the Windows build (its
+known CLI issue above) — not yet verified.
 
 ## Testing from a real, remote device
 
