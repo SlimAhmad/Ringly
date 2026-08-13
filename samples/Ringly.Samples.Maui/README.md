@@ -36,19 +36,30 @@ actually run it, an emulator or device — `dotnet build` alone only compiles an
 packages, it doesn't deploy. Use Visual Studio or `dotnet build -t:Run` with a
 target device selected to deploy and launch.
 
-**Known issue on this dev machine**: the Windows target currently fails to
-*restore* (not a code problem) with:
+**Known issue building/running the Windows target from the CLI**: `dotnet build`
+(and `dotnet build -t:Run`) for `net10.0-windows10.0.19041.0` currently fails to
+restore with:
 
 ```
-NU1102: Unable to find package Microsoft.NETCore.App.Runtime.Mono.win-x64 with version (= 10.0.10)
+NU1102: Unable to find package Microsoft.NETCore.App.Runtime.Mono.win-x64 with version (= 10.0.11)
 ```
 
-This is a mismatch between the installed .NET SDK (`10.0.302`) and the
-`maui-windows` workload's expected runtime pack version — confirmed by the fact
-that the **Android** target (same code, same project) builds and packages
-successfully end to end with no changes. Likely fixed by `dotnet workload update`;
-not run here since it's a machine-wide SDK change. If you hit this, that's the
-first thing to try.
+This is a confirmed upstream `dotnet/maui` bug, not a problem with this project —
+see [dotnet/maui#32968](https://github.com/dotnet/maui/issues/32968) and
+[dotnet/maui#27471](https://github.com/dotnet/maui/issues/27471): the CLI restore
+path for MAUI-on-Windows in .NET 10 requests a Mono runtime pack for `win-x64`
+that Microsoft hasn't published. `dotnet workload update`/`dotnet workload restore`
+do not fix it — confirmed by testing on this repo (the package version in the
+error just moves, e.g. `10.0.10` → `10.0.11`, still unpublished either way). The
+**Android** target (same code, same project) builds and packages successfully
+end to end via the CLI with no changes, so this is Windows/CLI-specific.
+
+**Visual Studio's own build path works around this** — confirmed: building and
+running the Windows target through Visual Studio (open `Samples.slnx`, set
+`Ringly.Samples.Maui` as the startup project, select the Windows Machine target,
+F5) succeeds, since VS uses different restore machinery than the `dotnet` CLI. If
+you don't have Visual Studio, the Android target is the CLI-verified path until
+Microsoft publishes the missing package.
 
 ## Walkthrough (two instances)
 
