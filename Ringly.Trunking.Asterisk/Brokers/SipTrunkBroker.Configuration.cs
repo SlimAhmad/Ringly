@@ -49,6 +49,14 @@ public partial class SipTrunkBroker
             new ConfigTuple { Attribute = "match", Value = config.ProviderHost }
         ]);
 
+        // Stored here, before attempting "endpoint" — the business-rule config §8.4's
+        // validation flow needs (RetrieveTrunkConfigAsync/RetrieveSpendStatusAsync callers)
+        // doesn't functionally depend on the endpoint PJSIP object existing, and gating it on
+        // that would mean the still-open upstream bug below (asterisk/asterisk#1655) blocks
+        // config retrieval too, not just endpoint creation. ConfigureTrunkAsync still throws
+        // below so callers see the real failure and know the trunk isn't fully configured.
+        this.trunkConfigs[config.TrunkName] = config;
+
         await this.PutPjsipConfigAsync("endpoint", config.TrunkName,
         [
             new ConfigTuple { Attribute = "context", Value = this.trunkOptions.TrunkDialplanContext },
@@ -58,8 +66,6 @@ public partial class SipTrunkBroker
             new ConfigTuple { Attribute = "outbound_auth", Value = config.TrunkName },
             new ConfigTuple { Attribute = "identify_by", Value = "ip,username" }
         ]);
-
-        this.trunkConfigs[config.TrunkName] = config;
     }
 
     public ValueTask<SipTrunkConfig> RetrieveTrunkConfigAsync(string trunkName) =>
