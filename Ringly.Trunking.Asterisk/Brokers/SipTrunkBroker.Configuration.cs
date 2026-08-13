@@ -67,6 +67,9 @@ public partial class SipTrunkBroker
             ? ValueTask.FromResult(config)
             : throw new HttpResponseNotFoundException();
 
+    public ValueTask<IReadOnlyList<string>> ListConfiguredTrunkNamesAsync() =>
+        ValueTask.FromResult<IReadOnlyList<string>>(this.trunkConfigs.Keys.ToList());
+
     public async ValueTask RemoveTrunkAsync(string trunkName)
     {
         foreach (string objectType in new[] { "endpoint", "identify", "auth", "aor" })

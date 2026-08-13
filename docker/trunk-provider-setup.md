@@ -45,6 +45,10 @@ not, regardless of trunk vs. client SIP objects. See row #21/#24's notes.
 
 ## 3. Spend-status alerting (§8.7 item 13)
 
-Tracked separately as row #29 — `RetrieveSpendStatusAsync` needs to be polled (or the provider's
-usage webhook consumed) and wired to actually notify a human on anomalous spend, not just get
-checked reactively inside `DialOutAsync`.
+Done — row #29. `TrunkSpendAlertBackgroundService` polls every configured trunk on an interval
+(`TrunkSpendAlertOptions.PollInterval`, default 5 minutes) via `TrunkSpendAlertService.PollAsync`,
+comparing each against its own `MaxConcurrentCallsPerTrunk`/`MaxDailySpendUsd` and calling
+`ITrunkSpendAlertNotifier` on anomalies. Only a logging-based default notifier
+(`LoggingTrunkSpendAlertNotifier`, Critical-level) ships — swap in a real paging/messaging
+integration (Slack/email/PagerDuty/SMS, not doc-specified which) before relying on this for
+production toll-fraud detection.
