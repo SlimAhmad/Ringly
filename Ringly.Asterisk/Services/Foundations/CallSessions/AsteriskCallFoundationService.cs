@@ -2,6 +2,8 @@ using Ringly.Abstractions;
 using Ringly.Abstractions.Models;
 using Ringly.Asterisk.Brokers;
 using Ringly.Asterisk.Models;
+using Ringly.CallCenter.Abstractions;
+using Ringly.CallCenter.Abstractions.Models;
 
 namespace Ringly.Asterisk.Services.Foundations.CallSessions;
 
@@ -10,13 +12,19 @@ public partial class AsteriskCallFoundationService : ICallProvider
     private const string MixingBridgeType = "mixing";
 
     private readonly IAsteriskBroker asteriskBroker;
+    private readonly ISipCredentialsStore sipCredentialsStore;
+    private readonly IQueueRegistry queueRegistry;
     private readonly ILoggingBroker loggingBroker;
 
     public AsteriskCallFoundationService(
         IAsteriskBroker asteriskBroker,
+        ISipCredentialsStore sipCredentialsStore,
+        IQueueRegistry queueRegistry,
         ILoggingBroker loggingBroker)
     {
         this.asteriskBroker = asteriskBroker;
+        this.sipCredentialsStore = sipCredentialsStore;
+        this.queueRegistry = queueRegistry;
         this.loggingBroker = loggingBroker;
     }
 

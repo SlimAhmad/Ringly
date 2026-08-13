@@ -16,15 +16,18 @@ namespace Ringly.Twilio.Services.Foundations.CallSessions;
 public partial class TwilioCallProvider : ICallProvider
 {
     private readonly ITwilioBroker twilioBroker;
+    private readonly ISipCredentialsStore sipCredentialsStore;
     private readonly ILoggingBroker loggingBroker;
     private readonly TwilioOptions twilioOptions;
 
     public TwilioCallProvider(
         ITwilioBroker twilioBroker,
+        ISipCredentialsStore sipCredentialsStore,
         ILoggingBroker loggingBroker,
         IOptions<TwilioOptions> twilioOptions)
     {
         this.twilioBroker = twilioBroker;
+        this.sipCredentialsStore = sipCredentialsStore;
         this.loggingBroker = loggingBroker;
         this.twilioOptions = twilioOptions.Value;
     }
