@@ -16,5 +16,6 @@
   <Project Path="Ringly.Trunking.Asterisk.Tests.Acceptance/Ringly.Trunking.Asterisk.Tests.Acceptance.csproj" />
   <Project Path="Ringly.Trunking.Asterisk.Tests.Unit/Ringly.Trunking.Asterisk.Tests.Unit.csproj" />
   <Project Path="Ringly.Trunking.Asterisk/Ringly.Trunking.Asterisk.csproj" />
+  <Project Path="Ringly.Twilio.Tests.Unit/Ringly.Twilio.Tests.Unit.csproj" />
   <Project Path="Ringly.Twilio/Ringly.Twilio.csproj" />
 </Solution>
