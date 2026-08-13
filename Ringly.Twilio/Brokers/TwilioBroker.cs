@@ -11,10 +11,14 @@ public partial class TwilioBroker : ITwilioBroker
 
     private readonly HttpClient httpClient;
     private readonly IRESTFulApiFactoryClient apiClient;
+    private readonly string taskRouterBaseUrl;
+    private readonly string workspaceSid;
 
     public TwilioBroker(IOptions<TwilioOptions> options)
     {
         TwilioOptions twilioOptions = options.Value;
+        this.taskRouterBaseUrl = twilioOptions.TaskRouterBaseUrl.TrimEnd('/');
+        this.workspaceSid = twilioOptions.WorkspaceSid;
 
         // Trailing slash required for relative URL combination to append rather than replace
         // the last path segment — see Ringly.Asterisk.Brokers.AsteriskBroker for the same

@@ -17,4 +17,15 @@ public class TwilioOptions
     // account-level caller ID (a Twilio-owned/verified number) is the pragmatic default most
     // apps actually use — not doc-specified, confirm before shipping.
     public string DefaultCallerId { get; set; } = string.Empty;
+
+    // TaskRouter's TaskQueue/Workflow resources live under a Workspace, a separate top-level
+    // resource from Calls/Conferences — confirmed against Twilio's TaskQueue resource docs
+    // (POST /v1/Workspaces/{WorkspaceSid}/TaskQueues). One Workspace is the pragmatic default
+    // most single-tenant apps use; not doc-specified, confirm before shipping.
+    public string WorkspaceSid { get; set; } = string.Empty;
+
+    // TaskRouter is served from a distinct host/version ("taskrouter.twilio.com/v1"), not the
+    // "api.twilio.com/2010-04-01" host the Calls/Conferences endpoints use — confirmed against
+    // Twilio's TaskQueue resource docs.
+    public string TaskRouterBaseUrl { get; set; } = "https://taskrouter.twilio.com/v1";
 }

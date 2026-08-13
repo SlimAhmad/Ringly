@@ -7,6 +7,8 @@
   <Project Path="Ringly.CallCenter.Abstractions/Ringly.CallCenter.Abstractions.csproj" />
   <Project Path="Ringly.CallCenter.Asterisk.Tests.Unit/Ringly.CallCenter.Asterisk.Tests.Unit.csproj" />
   <Project Path="Ringly.CallCenter.Asterisk/Ringly.CallCenter.Asterisk.csproj" />
+  <Project Path="Ringly.CallCenter.Twilio.Tests.Unit/Ringly.CallCenter.Twilio.Tests.Unit.csproj" />
+  <Project Path="Ringly.CallCenter.Twilio/Ringly.CallCenter.Twilio.csproj" />
   <Project Path="Ringly.Client.Abstractions/Ringly.Client.Abstractions.csproj" />
   <Project Path="Ringly.Client.SipSorcery/Ringly.Client.SipSorcery.csproj" />
   <Project Path="Ringly.Storage.Abstractions/Ringly.Storage.Abstractions.csproj" />
