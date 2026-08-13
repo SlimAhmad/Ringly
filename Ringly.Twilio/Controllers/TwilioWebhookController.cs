@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -48,7 +49,12 @@ public class TwilioWebhookController : ControllerBase
 
         if (!isValid)
         {
-            return this.Forbid();
+            // Not this.Forbid() — ForbidResult requires the hosting app to have an
+            // authentication scheme registered (it throws InvalidOperationException otherwise,
+            // confirmed via row #36's acceptance test), which this controller has no business
+            // requiring just to reject a bad webhook signature. A direct 403 has no such
+            // dependency.
+            return this.StatusCode(StatusCodes.Status403Forbidden);
         }
 
         this.callEventStream.Publish(new CallEvent

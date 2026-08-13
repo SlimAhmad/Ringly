@@ -80,7 +80,7 @@ public class TwilioWebhookControllerTests
     }
 
     [Fact]
-    public void ShouldReturnForbidAndNotPublishWhenSignatureInvalid()
+    public void ShouldReturnForbiddenStatusAndNotPublishWhenSignatureInvalid()
     {
         // given
         var request = new TwilioVoiceWebhookRequest { CallSid = "CA123", CallStatus = "ringing" };
@@ -97,7 +97,8 @@ public class TwilioWebhookControllerTests
         IActionResult result = this.controller.ReceiveVoiceStatusCallback(request);
 
         // then
-        result.Should().BeOfType<ForbidResult>();
+        result.Should().BeOfType<StatusCodeResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
 
         this.callEventStreamMock.Verify(stream =>
             stream.Publish(It.IsAny<CallEvent>()),
