@@ -82,9 +82,14 @@ docker compose --profile tunnel up -d playit
 ```
 
 Then, in the playit.gg dashboard, add a UDP tunnel for the agent pointing at local address
-`asterisk:5060` (the `playit` container shares this file's default network, so the service name
-resolves) — the dashboard shows the public host:port to point a remote MAUI instance's
-`RegistrarHost` at. Off by default (opt-in via the `tunnel` profile) since it dials out to a
+`asterisk:5060` (the `playit` container shares this file's default Compose network, so the
+service name resolves) — the dashboard shows the public host:port to point a remote MAUI
+instance's `RegistrarHost` at. (playit.gg's own dashboard-generated run command uses
+`--net=host` instead; confirmed by testing that doesn't work under Docker Desktop on Windows —
+a probe sent from inside a `network_mode: host` container to `localhost:5060` never reached
+Asterisk, even though a listener was visible on that port from the same namespace. The default
+Compose bridge network sidesteps that platform quirk.) Off by default (opt-in via the `tunnel`
+profile) since it dials out to a
 third-party relay network. Full two-way audio from a genuinely remote device additionally needs
 coturn's relay (`3478/udp` + the `49160-49200` range above) reachable too, which needs its own
 tunnel/port-forward — not set up here, since the signaling path (register + call routing) is

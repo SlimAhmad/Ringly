@@ -70,15 +70,26 @@ services:
   #      PLAYIT_SECRET_KEY=<your key>
   #   3. `docker compose --profile tunnel up -d playit`, then in the playit.gg dashboard
   #      add a UDP tunnel for this agent pointing at local address "asterisk:5060" (the
-  #      two containers share this file's default network, so the service name resolves).
+  #      `playit` container shares this file's default Compose network with the `asterisk`
+  #      service, so the container name resolves).
   #   4. The dashboard shows the public host:port playit assigns — point a remote MAUI
   #      instance's RegistrarHost at that instead of "10.0.2.2"/your LAN IP.
   # Full two-way audio from a genuinely remote device additionally depends on coturn's
   # relay (3478/udp + the 49160-49200 range above) being reachable, which needs its own
   # tunnel/port-forward if you're testing from off-network — not set up here, since the
   # signaling path (register + call routing) is the part this was built to prove.
+  #
+  # playit.gg's own dashboard-generated run command uses `--net=host`, which works on native
+  # Linux but was confirmed NOT to reach other containers' published ports under Docker
+  # Desktop on Windows (its "host" networking shares the internal VM's namespace, not the
+  # same one the "ports:" published-port proxy binds — verified live: a probe sent from
+  # inside a `network_mode: host` container to "localhost:5060" never reached Asterisk, even
+  # though both a listening socket on port 5060 was visible in /proc/net/udp from that
+  # namespace and Asterisk's own container confirmed it was listening). Using the regular
+  # Compose bridge network with the "asterisk" service name instead sidesteps that platform
+  # quirk entirely and is portable across OSes.
   playit:
-    image: playitcloud/playit:latest
+    image: ghcr.io/playit-cloud/playit-agent:1.0
     profiles: ["tunnel"]
     environment:
       # Compose interpolates every service's environment at parse time regardless of which
