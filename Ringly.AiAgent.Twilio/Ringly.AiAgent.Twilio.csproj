@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- Raw WebSocket accept/read-loop plumbing (ConversationRelayWebSocketMiddleware) needs
+         ASP.NET Core's WebSocket middleware types — plain class library, consuming app's own
+         host wires it in, same pattern as Ringly.Twilio's TwilioWebhookController (row #32). -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="System.Reactive" Version="7.0.0" />
+    <PackageReference Include="Xeption" Version="2.9.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ringly.AiAgent.Abstractions\Ringly.AiAgent.Abstractions.csproj" />
+    <ProjectReference Include="..\Ringly.Twilio\Ringly.Twilio.csproj" />
+  </ItemGroup>
+
+</Project>
