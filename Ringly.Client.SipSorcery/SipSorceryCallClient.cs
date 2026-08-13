@@ -6,6 +6,7 @@ using Ringly.Client.Abstractions.Models;
 using SIPSorcery.Net;
 using SIPSorcery.SIP;
 using SIPSorcery.SIP.App;
+using SIPSorceryMedia.Abstractions;
 
 namespace Ringly.Client.SipSorcery;
 
@@ -90,7 +91,7 @@ public class SipSorceryCallClient : ICallClient, IDisposable
 
     public async ValueTask<CallHandle> PlaceCallAsync(string targetExtension)
     {
-        var mediaSession = new RTCPeerConnection(this.rtcConfiguration);
+        var mediaSession = this.CreateMediaSession();
 
         // A bare extension (e.g. "1001") is not a resolvable SIP destination on its own — with
         // no "@domain" part, SIPSorcery's URI resolution falls back to legacy dotted-decimal
@@ -129,7 +130,7 @@ public class SipSorceryCallClient : ICallClient, IDisposable
             throw new InvalidOperationException($"No pending incoming call for handle '{handle.Id}'.");
         }
 
-        var mediaSession = new RTCPeerConnection(this.rtcConfiguration);
+        var mediaSession = this.CreateMediaSession();
         await this.userAgent.Answer(uas, mediaSession);
         this.activeMediaSessions[handle.Id] = mediaSession;
     }
@@ -166,6 +167,28 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         this.userAgent.Close();
         this.sipTransport.Shutdown();
         this.events.Dispose();
+    }
+
+    private RTCPeerConnection CreateMediaSession()
+    {
+        var mediaSession = new RTCPeerConnection(this.rtcConfiguration);
+
+        // Without a track, the generated SDP has no "m=" line at all — confirmed against a
+        // real Asterisk instance: an offer of just "v=0/o=.../s=sipsorcery/t=0 0" with no media
+        // description is correctly rejected with "488 Not Acceptable Here" (there's nothing to
+        // negotiate). PCMU/PCMA are Asterisk's two allowed codecs for these test endpoints
+        // (docker/asterisk/seed-test-endpoint.sql's "allow" list also includes opus, but PCMU/
+        // PCMA need no extra codec package here). This declares the codecs a real call needs;
+        // it does not by itself wire up microphone capture or speaker playback — callers still
+        // need to attach an audio source/sink (e.g. via SIPSorceryMedia.Abstractions platform
+        // bindings) for two-way audio, only signaling/negotiation is guaranteed to work here.
+        var audioTrack = new MediaStreamTrack(
+            new AudioFormat(SDPWellKnownMediaFormatsEnum.PCMU),
+            MediaStreamStatusEnum.SendRecv);
+
+        mediaSession.addTrack(audioTrack);
+
+        return mediaSession;
     }
 
     private void HandleIncomingCall(SIPUserAgent ua, SIPRequest sipRequest)

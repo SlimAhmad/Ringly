@@ -121,14 +121,38 @@ sample):
   remember the credentials from its last successful `RegisterAsync` and reuse
   them to answer the INVITE's auth challenge too.
 
-With both fixes in, a call from a registered `1000` to extension `1001` (not
-registered by anything in this test) now correctly reaches Asterisk, passes
-authentication, and gets a real SIP response — `100 Trying` then
-`488 Not Acceptable Here`, most likely a WebRTC media/SDP capability mismatch
-between SIPSorcery's `RTCPeerConnection`-based offer and the PJSIP endpoint's
-realtime config (`docker/asterisk/seed-test-endpoint.sql`) rather than a
-signaling problem — signaling (registration, routing, auth) is proven working;
-a full two-instance answered call with audio has not yet been verified and is
-the natural next step (needs a second real registered listener to test against,
-plus likely a `webrtc`/`media_encryption`/ICE-related tweak to the endpoint
-config in the seed SQL).
+A third bug surfaced once auth was fixed and the call finally reached SDP
+negotiation:
+
+- **Empty SDP offer**: `PlaceCallAsync`/`AnswerCallAsync` created a bare
+  `RTCPeerConnection` with no media track added, so the generated offer was
+  just `v=0/o=.../s=sipsorcery/t=0 0` — no `m=` line at all. Asterisk correctly
+  rejected that with `488 Not Acceptable Here` (there was nothing to
+  negotiate). Fixed by adding a `SIPSorceryMedia.Abstractions`-based
+  `MediaStreamTrack` (PCMU) to every media session before it's used.
+
+With all three fixes in, a call from a registered `1000` to extension `1001`
+(not registered by anything in this test) now correctly reaches Asterisk,
+authenticates, negotiates real SDP (`100 Trying`, offer accepted, no more
+`488`), and enters Asterisk's `ride_hailing` dialplan → `Stasis` app —
+confirmed via `pjsip set logger on`. From there it depends on
+`Ringly.Samples.WebApi` running (it hosts the `ride_hailing_app` ARI/Stasis
+application Asterisk routes into) to actually bridge the call to `1001`'s
+channel — the WebApi sample's own ARI event handling currently only
+originates calls started via its own `POST /calls` endpoint
+(`ICallProvider.StartCallSessionAsync`), not organically client-dialed ones
+that arrive by a caller entering the Stasis app directly. Auto-bridging a
+client-dialed Stasis entry to the target extension is real, additional
+call-routing logic, not yet implemented — the next concrete step, and a
+different chunk of work from anything above it (signaling, routing, and media
+negotiation are all now proven working end to end).
+
+## Testing from a real, remote device
+
+An Android emulator reaches this stack via `10.0.2.2` and a device on the same
+LAN via your machine's IP (see the comment in `MauiProgram.cs`) — for a device
+on a different network entirely, see
+[docker/README.md](../../docker/README.md#tunneling-for-a-real-remote-device-opt-in)
+for the playit.gg tunnel setup (not ngrok — confirmed incompatible with this
+stack: ngrok has no UDP support at any tier, and this Asterisk image has no
+SIP-over-TCP support compiled in either).

@@ -65,6 +65,31 @@ Verified locally: `turnutils_stunclient` returns a reflexive address; `turnutils
 
 **ICE config wiring** — `Ringly.Client.SipSorcery`'s `SipSorceryCallOptions` now has `IceServerUrls`/`IceServerUsername`/`IceServerCredential`; `SipSorceryCallClient` builds an `RTCConfiguration` from them and passes it into every `RTCPeerConnection` it creates.
 
+## Tunneling for a real remote device (opt-in)
+
+An Android emulator reaches this stack via `10.0.2.2` and a device on the same LAN via your
+machine's IP, but a genuinely remote device (different network entirely) needs a public tunnel.
+Use [playit.gg](https://playit.gg), not ngrok — confirmed by testing: ngrok has no UDP support
+at any tier, and this Asterisk image's pjproject build has no TCP transport compiled in either
+(`pjsip show transports` never lists one no matter what's configured), so the two are
+incompatible with each other. playit.gg tunnels UDP directly, matching the transport
+`samples/Ringly.Samples.Maui` already uses.
+
+```bash
+# one-time: sign up / log in at playit.gg, claim an agent, copy its secret key into docker/.env:
+#   PLAYIT_SECRET_KEY=<your key>
+docker compose --profile tunnel up -d playit
+```
+
+Then, in the playit.gg dashboard, add a UDP tunnel for the agent pointing at local address
+`asterisk:5060` (the `playit` container shares this file's default network, so the service name
+resolves) — the dashboard shows the public host:port to point a remote MAUI instance's
+`RegistrarHost` at. Off by default (opt-in via the `tunnel` profile) since it dials out to a
+third-party relay network. Full two-way audio from a genuinely remote device additionally needs
+coturn's relay (`3478/udp` + the `49160-49200` range above) reachable too, which needs its own
+tunnel/port-forward — not set up here, since the signaling path (register + call routing) is
+what this was built to prove.
+
 ## SIP trunk provider (§8.7, row #28)
 
 Configuring a real SIP trunk (PSTN masked-calling fallback) needs a real external provider

@@ -34,7 +34,7 @@ services:
       migrate:
         condition: service_completed_successfully
     ports:
-      - "5060:5060/udp"   # SIP UDP (server-to-server/PSTN trunking)
+      - "5060:5060/udp"   # SIP UDP (server-to-server/PSTN trunking, and Ringly.Samples.Maui's default local-dev transport)
       - "8088:8088/tcp"   # ARI/HTTP (internal-only in real deployments; exposed here for local dev)
       - "8089:8089/tcp"   # WSS (WebRTC/mobile SIP signaling + ARI events)
       - "5038:5038/tcp"   # AMI (internal-only in real deployments; exposed here for local dev)
@@ -51,6 +51,44 @@ services:
       - "5349:5349/tcp"   # STUN/TURN over TLS (TURNS)
       - "5349:5349/udp"   # STUN/TURN over TLS (TURNS)
       - "49160-49200:49160-49200/udp"  # TURN relay media range
+    restart: unless-stopped
+
+  # Tunnels Asterisk's SIP UDP port to the public internet via playit.gg — for testing
+  # samples/Ringly.Samples.Maui from a real device that isn't on the same LAN as this
+  # machine (an emulator reaches the host directly via 10.0.2.2; a genuinely remote device
+  # can't). Chosen over ngrok specifically because ngrok has no UDP support at any tier,
+  # and this Asterisk image's pjproject build has no TCP transport compiled in either
+  # (confirmed via a live "pjsip show transports" test) — the two are incompatible with
+  # each other, whereas playit.gg tunnels UDP directly, matching the transport this stack
+  # already uses. Gated behind the "tunnel" profile (opt-in via
+  # `docker compose --profile tunnel up -d`) since it dials out to a third-party relay
+  # network — not something to start by default.
+  #
+  # Setup (one-time, needs your own playit.gg account — this part can't be automated):
+  #   1. Sign up / log in at https://playit.gg and claim an agent from the dashboard.
+  #   2. Copy its secret key into a ".env" file next to this compose file:
+  #      PLAYIT_SECRET_KEY=<your key>
+  #   3. `docker compose --profile tunnel up -d playit`, then in the playit.gg dashboard
+  #      add a UDP tunnel for this agent pointing at local address "asterisk:5060" (the
+  #      two containers share this file's default network, so the service name resolves).
+  #   4. The dashboard shows the public host:port playit assigns — point a remote MAUI
+  #      instance's RegistrarHost at that instead of "10.0.2.2"/your LAN IP.
+  # Full two-way audio from a genuinely remote device additionally depends on coturn's
+  # relay (3478/udp + the 49160-49200 range above) being reachable, which needs its own
+  # tunnel/port-forward if you're testing from off-network — not set up here, since the
+  # signaling path (register + call routing) is the part this was built to prove.
+  playit:
+    image: playitcloud/playit:latest
+    profiles: ["tunnel"]
+    environment:
+      # Compose interpolates every service's environment at parse time regardless of which
+      # profiles are active, so this can't use required ("${VAR:?err}") syntax without
+      # breaking `docker compose up -d` for everyone who hasn't set this — even though they
+      # never asked for the "tunnel" profile. Falls back to empty; the playit container itself
+      # exits with a clear error if it starts without a real key.
+      SECRET_KEY: ${PLAYIT_SECRET_KEY:-}
+    depends_on:
+      - asterisk
     restart: unless-stopped
 
   # Row #38c — Dograh (self-hosted, ghcr.io/dograh-hq), vendored here so anyone cloning this
