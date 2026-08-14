@@ -15,13 +15,15 @@ namespace Ringly.Samples.WebApi;
 public class RideHailingCallRouter : BackgroundService
 {
     private const string MixingBridgeType = "mixing";
+    private const string UpChannelState = "Up";
 
     private readonly IAsteriskBroker asteriskBroker;
     private readonly ILogger<RideHailingCallRouter> logger;
 
-    // Tracks channels this router originated itself (the callee leg) so their own StasisStart —
-    // which looks identical to any other entry at a glance — gets bridged in rather than
-    // mistaken for a second, unrelated client-dialed call.
+    // Tracks channels this router originated itself (the callee leg) so the caller's leg isn't
+    // mistaken for one, and so the callee leg only gets bridged once it's genuinely answered
+    // (see HandleChannelStateChangeAsync) — not on its own StasisStart, which fires the instant
+    // Asterisk creates the channel, well before the real device has rung, let alone answered.
     private readonly ConcurrentDictionary<string, string> pendingBridgeIdByChannelId = new();
 
     public RideHailingCallRouter(IAsteriskBroker asteriskBroker, ILogger<RideHailingCallRouter> logger)
@@ -32,10 +34,17 @@ public class RideHailingCallRouter : BackgroundService
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        IDisposable subscription = this.asteriskBroker.StreamStasisStartEvents()
+        IDisposable stasisSubscription = this.asteriskBroker.StreamStasisStartEvents()
             .Subscribe(stasisStartEvent => this.OnStasisStart(stasisStartEvent));
 
-        stoppingToken.Register(subscription.Dispose);
+        IDisposable stateChangeSubscription = this.asteriskBroker.StreamChannelStateChangeEvents()
+            .Subscribe(stateChangeEvent => this.OnChannelStateChange(stateChangeEvent));
+
+        stoppingToken.Register(() =>
+        {
+            stasisSubscription.Dispose();
+            stateChangeSubscription.Dispose();
+        });
 
         return Task.CompletedTask;
     }
@@ -55,27 +64,39 @@ public class RideHailingCallRouter : BackgroundService
         }
     }
 
+    private async void OnChannelStateChange(ChannelStateChangeEvent stateChangeEvent)
+    {
+        try
+        {
+            await this.HandleChannelStateChangeAsync(stateChangeEvent);
+        }
+        catch (Exception exception)
+        {
+            this.logger.LogError(
+                exception,
+                "Failed to bridge answered channel {ChannelId}",
+                stateChangeEvent.ChannelId);
+        }
+    }
+
     private async Task HandleStasisStartAsync(StasisStartEvent stasisStartEvent)
     {
-        if (this.pendingBridgeIdByChannelId.TryRemove(stasisStartEvent.ChannelId, out string? bridgeId))
+        if (this.pendingBridgeIdByChannelId.ContainsKey(stasisStartEvent.ChannelId))
         {
-            // This is the callee leg we originated — it enters Stasis (and this StasisStart
-            // fires) the instant Asterisk creates the channel, before the real device has even
-            // rung, let alone been answered. Calling AnswerChannelAsync here — as this used to
-            // do — tells Asterisk to treat the leg as answered immediately, which is NOT the
-            // same as the far end actually answering: confirmed by testing, every call
-            // "answered" within 60-160ms of being dialed, far faster than any human tapping
-            // Answer, and the callee's own client never got to show an incoming-call screen at
-            // all. Just adding the (still-ringing) channel to the bridge now, with no explicit
-            // answer, lets the real INVITE ring the callee's client normally — audio connects
-            // itself once they actually answer, since the channel's already a bridge member by
-            // then.
-            await this.asteriskBroker.AddChannelToBridgeAsync(bridgeId, stasisStartEvent.ChannelId);
+            // Our own originated (callee) leg entering Stasis — do nothing here. Bridging it
+            // now (even without an explicit answer) was confirmed to make Asterisk treat a
+            // mixing bridge join as an implicit answer, which is what caused every call to
+            // "answer" within 60-160ms of being dialed — before the callee's real device had
+            // even rung. Waiting for its ChannelStateChange to "Up" instead means the callee's
+            // own client genuinely has to answer first.
             return;
         }
 
         if (stasisStartEvent.Args.Count == 0)
         {
+            // Not a client-dialed entry into the ride_hailing dialplan (e.g. a leg
+            // Ringly.Samples.WebApi originated itself via StartCallSessionAsync/RouteToQueueAsync,
+            // which bridges its own channels directly and doesn't need this router).
             return;
         }
 
@@ -87,5 +108,18 @@ public class RideHailingCallRouter : BackgroundService
 
         Channel targetChannel = await this.asteriskBroker.InsertChannelAsync($"PJSIP/{targetExtension}");
         this.pendingBridgeIdByChannelId[targetChannel.ChannelId] = bridge.Id;
+    }
+
+    private async Task HandleChannelStateChangeAsync(ChannelStateChangeEvent stateChangeEvent)
+    {
+        if (stateChangeEvent.State != UpChannelState)
+        {
+            return;
+        }
+
+        if (this.pendingBridgeIdByChannelId.TryRemove(stateChangeEvent.ChannelId, out string? bridgeId))
+        {
+            await this.asteriskBroker.AddChannelToBridgeAsync(bridgeId, stateChangeEvent.ChannelId);
+        }
     }
 }

@@ -22,6 +22,7 @@ public class SipSorceryCallClient : ICallClient, IDisposable
     private readonly IAudioSource? audioSource;
     private readonly IAudioSink? audioSink;
     private SipCredentials? registeredCredentials;
+    private SIPRegistrationUserAgent? registrationAgent;
 
     // audioSource/audioSink are optional and platform-specific — this library has no built-in
     // microphone/speaker access of its own (SIPSorcery's own platform audio packages, e.g.
@@ -83,6 +84,19 @@ public class SipSorceryCallClient : ICallClient, IDisposable
 
     public ValueTask RegisterAsync(SipCredentials credentials)
     {
+        // Calling this again (e.g. the user tapping "Register" a second time) used to just
+        // create a brand new SIPRegistrationUserAgent on top of whatever was already running,
+        // leaking the old one — its background refresh timer kept firing indefinitely,
+        // completely untracked. Confirmed as a real bug against a live Asterisk instance: with
+        // two of these running for the same extension, periodic re-registration intermittently
+        // failed with "Registration unequivocal failure with Unauthorised... no further
+        // registration attempts will be made" (a stale/colliding digest nonce between the two
+        // agents' independent refresh cycles), silently leaving the client's actual transport
+        // in a broken state — even though Asterisk's own contact table still showed a
+        // seemingly-live registration from whichever agent last succeeded. Stopping any
+        // previous agent first means there's only ever one active per client instance.
+        this.registrationAgent?.Stop(sendZeroExpiryRegister: false);
+
         var registrationCompletionSource = new TaskCompletionSource();
 
         var registrationAgent = new SIPRegistrationUserAgent(
@@ -91,6 +105,8 @@ public class SipSorceryCallClient : ICallClient, IDisposable
             credentials.Password,
             this.options.RegistrarHost,
             this.options.RegistrationExpirySeconds);
+
+        this.registrationAgent = registrationAgent;
 
         registrationAgent.RegistrationSuccessful += (uri, response) =>
         {
@@ -186,6 +202,8 @@ public class SipSorceryCallClient : ICallClient, IDisposable
 
     public void Dispose()
     {
+        this.registrationAgent?.Stop(sendZeroExpiryRegister: false);
+
         this.userAgent.OnIncomingCall -= this.HandleIncomingCall;
         this.userAgent.OnDtmfTone -= this.HandleDtmfTone;
         this.userAgent.OnCallHungup -= this.HandleCallHungup;
