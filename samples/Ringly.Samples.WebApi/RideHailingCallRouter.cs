@@ -59,7 +59,17 @@ public class RideHailingCallRouter : BackgroundService
     {
         if (this.pendingBridgeIdByChannelId.TryRemove(stasisStartEvent.ChannelId, out string? bridgeId))
         {
-            await this.asteriskBroker.AnswerChannelAsync(stasisStartEvent.ChannelId);
+            // This is the callee leg we originated — it enters Stasis (and this StasisStart
+            // fires) the instant Asterisk creates the channel, before the real device has even
+            // rung, let alone been answered. Calling AnswerChannelAsync here — as this used to
+            // do — tells Asterisk to treat the leg as answered immediately, which is NOT the
+            // same as the far end actually answering: confirmed by testing, every call
+            // "answered" within 60-160ms of being dialed, far faster than any human tapping
+            // Answer, and the callee's own client never got to show an incoming-call screen at
+            // all. Just adding the (still-ringing) channel to the bridge now, with no explicit
+            // answer, lets the real INVITE ring the callee's client normally — audio connects
+            // itself once they actually answer, since the channel's already a bridge member by
+            // then.
             await this.asteriskBroker.AddChannelToBridgeAsync(bridgeId, stasisStartEvent.ChannelId);
             return;
         }
