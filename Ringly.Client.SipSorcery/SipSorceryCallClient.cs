@@ -1,5 +1,6 @@
 using System.Net;
 using System.Reactive.Subjects;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Ringly.Client.Abstractions;
 using Ringly.Client.Abstractions.Models;
@@ -12,6 +13,14 @@ namespace Ringly.Client.SipSorcery;
 
 public class SipSorceryCallClient : ICallClient, IDisposable
 {
+    // Not static readonly — confirmed live in AndroidAudioEndPoint that a static readonly
+    // logger field can permanently capture SIPSorcery's default no-op logger if this class is
+    // ever constructed before SIPSorcery.LogFactory.Set() wires up the real ILoggerFactory,
+    // silently discarding every log call for the rest of the app's lifetime. This class is
+    // currently only ever resolved lazily via DI, well after that point, but fetching fresh each
+    // call costs nothing and removes any doubt.
+    private static ILogger Logger => SIPSorcery.LogFactory.CreateLogger<SipSorceryCallClient>();
+
     private readonly SipSorceryCallOptions options;
     private readonly SIPTransport sipTransport;
     private readonly SIPUserAgent userAgent;
@@ -22,6 +31,7 @@ public class SipSorceryCallClient : ICallClient, IDisposable
     private readonly IAudioSource? audioSource;
     private readonly IAudioSink? audioSink;
     private SipCredentials? registeredCredentials;
+    private SIPRegistrationUserAgent? registrationAgent;
 
     // audioSource/audioSink are optional and platform-specific — this library has no built-in
     // microphone/speaker access of its own (SIPSorcery's own platform audio packages, e.g.
@@ -45,6 +55,18 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         this.pendingIncomingCalls = [];
         this.activeMediaSessions = [];
 
+        // RtpIceChannel's defaults (8s to declare "disconnected", 16s to declare hard "failed")
+        // are tuned for stable networks — confirmed via a live real-device test that ordinary
+        // Wi-Fi jitter is enough to trip these: Asterisk's own trace showed the callee's channel
+        // joining the bridge and then leaving again within moments, matching these exact
+        // timings, well after ICE, DTLS-SRTP, and the firewall/NAT/coturn path had all already
+        // been individually confirmed working. These are mutable public static fields (not
+        // consts) specifically so callers can raise the tolerance; done once here for the whole
+        // app rather than per-call, since there's no legitimate reason to want the aggressive
+        // defaults for this client.
+        SIPSorcery.Net.RtpIceChannel.DISCONNECTED_TIMEOUT_PERIOD = 30;
+        SIPSorcery.Net.RtpIceChannel.FAILED_TIMEOUT_PERIOD = 60;
+
         this.rtcConfiguration = new RTCConfiguration
         {
             iceServers = this.options.IceServerUrls
@@ -56,6 +78,16 @@ public class SipSorceryCallClient : ICallClient, IDisposable
                     credentialType = RTCIceCredentialType.password
                 })
                 .ToList()
+
+            // NOTE: forcing iceTransportPolicy = relay was tried here to work around a direct
+            // host/peer-reflexive ICE pair silently carrying zero real media despite reporting
+            // "connected" (see strictrtp=no in docker/asterisk/config/rtp.conf for the sibling
+            // fix to a related issue). Reverted — confirmed live that requiring relay-only
+            // removes any fallback, so a single TURN allocate failure (observed: STUN error 437,
+            // "Allocation Mismatch") now fails the call outright with no candidates left to try
+            // at all, which is strictly worse than the original problem. Revisit once the 437
+            // itself is root-caused (coturn state left over from repeated rapid test attempts is
+            // one live theory) rather than reintroducing this as a blanket policy.
         };
 
         this.sipTransport = new SIPTransport();
@@ -72,7 +104,15 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         // access and need WS) should generally prefer against Asterisk anyway.
         this.sipTransport.AddSIPChannel(new SIPUDPChannel(IPAddress.Any, 0));
 
-        this.userAgent = new SIPUserAgent(this.sipTransport, null);
+        // isTransportExclusive: true — this client owns sipTransport exclusively (created it
+        // above, nothing else shares it). Confirmed via SIPUserAgent's source that in
+        // non-exclusive mode (the constructor's default), inbound SIP *requests* (INVITE,
+        // OPTIONS, etc.) still raise OnIncomingCall, but no automatic response is ever sent back
+        // over the wire — matching the exact symptom observed: registration (which only relies
+        // on matching responses to our own outbound requests) worked fine, while ANY inbound
+        // request, including a raw hand-crafted OPTIONS probe, got zero reply despite the socket
+        // being confirmed bound and receiving traffic at the OS level.
+        this.userAgent = new SIPUserAgent(this.sipTransport, null, isTransportExclusive: true);
 
         this.userAgent.OnIncomingCall += this.HandleIncomingCall;
         this.userAgent.OnDtmfTone += this.HandleDtmfTone;
@@ -83,6 +123,19 @@ public class SipSorceryCallClient : ICallClient, IDisposable
 
     public ValueTask RegisterAsync(SipCredentials credentials)
     {
+        // Calling this again (e.g. the user tapping "Register" a second time) used to just
+        // create a brand new SIPRegistrationUserAgent on top of whatever was already running,
+        // leaking the old one — its background refresh timer kept firing indefinitely,
+        // completely untracked. Confirmed as a real bug against a live Asterisk instance: with
+        // two of these running for the same extension, periodic re-registration intermittently
+        // failed with "Registration unequivocal failure with Unauthorised... no further
+        // registration attempts will be made" (a stale/colliding digest nonce between the two
+        // agents' independent refresh cycles), silently leaving the client's actual transport
+        // in a broken state — even though Asterisk's own contact table still showed a
+        // seemingly-live registration from whichever agent last succeeded. Stopping any
+        // previous agent first means there's only ever one active per client instance.
+        this.registrationAgent?.Stop(sendZeroExpiryRegister: false);
+
         var registrationCompletionSource = new TaskCompletionSource();
 
         var registrationAgent = new SIPRegistrationUserAgent(
@@ -91,6 +144,8 @@ public class SipSorceryCallClient : ICallClient, IDisposable
             credentials.Password,
             this.options.RegistrarHost,
             this.options.RegistrationExpirySeconds);
+
+        this.registrationAgent = registrationAgent;
 
         registrationAgent.RegistrationSuccessful += (uri, response) =>
         {
@@ -154,9 +209,43 @@ public class SipSorceryCallClient : ICallClient, IDisposable
 
     public ValueTask HangupAsync(CallHandle handle)
     {
-        this.userAgent.Hangup();
+        // An incoming call that hasn't been answered yet (Decline) has no established
+        // SIPUserAgent dialogue for userAgent.Hangup() to act on — confirmed live that calling
+        // it in that case was a silent no-op: nothing was ever sent back to the caller at all,
+        // leaving their UI stuck showing "dialing" forever with no failure response to react to.
+        // The still-pending SIPServerUserAgent has to be rejected directly instead, which is
+        // what actually sends the SIP response (486 Busy Here) the caller's SIPClientUserAgent
+        // needs to fail the call and update its own UI.
+        if (this.pendingIncomingCalls.Remove(handle.Id, out SIPServerUserAgent? uas))
+        {
+            try
+            {
+                uas.Reject(SIPResponseStatusCodesEnum.BusyHere, "Declined");
+            }
+            catch (Exception exception)
+            {
+                Logger.LogError(exception, "SIPServerUserAgent.Reject() failed for call {CallHandleId}.", handle.Id);
+            }
 
-        if (this.activeMediaSessions.Remove(handle.Id, out RTCPeerConnection? mediaSession))
+            return ValueTask.CompletedTask;
+        }
+
+        // SIPUserAgent.Hangup() closes its own tracked MediaSession *before* sending BYE — if
+        // that throws (or BYE construction/sending itself throws), the exception previously
+        // propagated out completely unlogged here, silently skipping BYE entirely while still
+        // leaving the caller's own eventLog (UI-only, easy to miss) as the only trace. Confirmed
+        // via a live test that the far end never receives a hangup signal in this scenario —
+        // this makes any such failure visible in the persistent debug log instead.
+        try
+        {
+            this.userAgent.Hangup();
+        }
+        catch (Exception exception)
+        {
+            Logger.LogError(exception, "SIPUserAgent.Hangup() failed for call {CallHandleId}.", handle.Id);
+        }
+
+        if (this.activeMediaSessions.Remove(handle.Id, out RTCPeerConnection? mediaSession) && !mediaSession.IsClosed)
         {
             mediaSession.Close("hangup");
         }
@@ -186,6 +275,8 @@ public class SipSorceryCallClient : ICallClient, IDisposable
 
     public void Dispose()
     {
+        this.registrationAgent?.Stop(sendZeroExpiryRegister: false);
+
         this.userAgent.OnIncomingCall -= this.HandleIncomingCall;
         this.userAgent.OnDtmfTone -= this.HandleDtmfTone;
         this.userAgent.OnCallHungup -= this.HandleCallHungup;
@@ -221,30 +312,130 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         var audioTrack = new MediaStreamTrack(formats, MediaStreamStatusEnum.SendRecv);
         mediaSession.addTrack(audioTrack);
 
+        // Fallback so the UI always learns a call ended, even when the far end's BYE never
+        // arrives — confirmed on a lossy network path that the outgoing BYE itself can time out
+        // silently (SIPClientUserAgent logs "Bye request ... failed with TimedOut" but otherwise
+        // does nothing further), so ua.OnCallHungup (which only fires from a genuine SIP-level
+        // BYE) never runs on the far end and its "CallHungup" event, which HandleCallEvent
+        // depends on to reset the UI, never gets published — leaving that side showing "in call"
+        // indefinitely even once the media has genuinely died and this side's own ICE-inactivity
+        // watchdog has already torn the session down. Guarded to publish once per session since
+        // a normal Hangup() also closes the media session and would otherwise double-publish.
+        bool hungupEventPublished = false;
+        mediaSession.onconnectionstatechange += state =>
+        {
+            if (!hungupEventPublished && state is RTCPeerConnectionState.closed
+                or RTCPeerConnectionState.failed
+                or RTCPeerConnectionState.disconnected)
+            {
+                hungupEventPublished = true;
+                this.PublishEvent("CallHungup", new CallHandle());
+            }
+        };
+
         if (this.audioSource is not null)
         {
-            this.audioSource.OnAudioSourceEncodedSample += mediaSession.SendAudio;
+            // Confirmed via a live Android test: mediaSession.SendAudio gets called throughout an
+            // entire call's duration (not just briefly at the start) with SIPSorcery repeatedly
+            // logging "SendRtpPacket cannot be called on a secure session before calling
+            // SetSecurityContext" — despite its own DTLS handshake code applying the security
+            // context synchronously before "connected" fires. This wrapper directly observes
+            // mediaSession's own security-context readiness (via the same public API SIPSorcery
+            // itself checks) at the moment of every send attempt, to get a definitive answer on
+            // whether it's ever actually ready during the call, rather than guessing further.
+            bool loggedNotReady = false;
+            bool loggedReady = false;
+
+            EncodedSampleDelegate sendAudioHandler = (durationRtpUnits, sample) =>
+            {
+                bool isReady = mediaSession.AudioStream?.GetSecurityContext() is not null;
+
+                if (!isReady && !loggedNotReady)
+                {
+                    loggedNotReady = true;
+                    Logger.LogWarning(
+                        "SendAudio observed AudioStream security context NOT ready (connectionState={ConnectionState}).",
+                        mediaSession.connectionState);
+                }
+                else if (isReady && !loggedReady)
+                {
+                    loggedReady = true;
+                    Logger.LogInformation("SendAudio observed AudioStream security context became ready.");
+                }
+
+                mediaSession.SendAudio(durationRtpUnits, sample);
+            };
+
+            this.audioSource.OnAudioSourceEncodedSample += sendAudioHandler;
+
+            // IAudioSource.StartAudio() doesn't throw on failure — it raises this event instead
+            // (e.g. AndroidAudioEndPoint's AudioRecord failing to initialize on a device/emulator
+            // with no usable mic, or a permission grant that didn't actually take). Without this
+            // subscribed, that failure was completely silent: "Audio source started." still logs
+            // (the method returned normally), no exception anywhere, and the only visible symptom
+            // was Asterisk's own RTP counters showing zero packets ever received from that leg.
+            this.audioSource.OnAudioSourceError += errorMessage =>
+                Logger.LogError("Audio source error: {ErrorMessage}", errorMessage);
 
             mediaSession.OnAudioFormatsNegotiated += negotiatedFormats =>
                 this.audioSource.SetAudioSourceFormat(negotiatedFormats.First());
 
             mediaSession.onconnectionstatechange += async state =>
             {
-                if (state == RTCPeerConnectionState.connected)
+                // onconnectionstatechange is invoked from SIPSorcery's own internal event
+                // dispatch, which does not await or observe this handler — an unlogged exception
+                // here (e.g. WindowsAudioEndPoint.StartAudio() failing to open a capture device)
+                // would silently vanish, leaving DTLS-SRTP fully connected but zero RTP ever
+                // actually sent, indistinguishable from a networking problem without this.
+                try
                 {
-                    await this.audioSource.StartAudio();
+                    Logger.LogInformation("Media session connection state changed to {State}.", state);
+
+                    if (state == RTCPeerConnectionState.connected)
+                    {
+                        await this.audioSource.StartAudio();
+                        Logger.LogInformation("Audio source started.");
+                    }
+                    else if (state is RTCPeerConnectionState.closed
+                        or RTCPeerConnectionState.failed
+                        or RTCPeerConnectionState.disconnected)
+                    {
+                        // this.audioSource is a shared singleton reused across every call (the
+                        // platform mic/speaker device is only ever created once) — without this,
+                        // OnAudioSourceEncodedSample keeps accumulating one handler per past call
+                        // forever, each still bound to that call's now-closed mediaSession. Every
+                        // subsequent captured audio frame then fires ALL of them, including the
+                        // stale ones, which SIPSorcery correctly rejects — but the resulting
+                        // "cannot be called on a secure session"/"closed RTP session" warning
+                        // spam drowns out genuine signal from whatever call is actually active.
+                        this.audioSource.OnAudioSourceEncodedSample -= sendAudioHandler;
+                        await this.audioSource.CloseAudio();
+                    }
                 }
-                else if (state is RTCPeerConnectionState.closed
-                    or RTCPeerConnectionState.failed
-                    or RTCPeerConnectionState.disconnected)
+                catch (Exception exception)
                 {
-                    await this.audioSource.CloseAudio();
+                    Logger.LogError(exception, "Failed handling media session connection state change to {State}.", state);
                 }
             };
         }
 
         if (this.audioSink is not null)
         {
+            this.audioSink.OnAudioSinkError += errorMessage =>
+                Logger.LogError("Audio sink error: {ErrorMessage}", errorMessage);
+
+            // Confirmed live as the actual reason a real Android device never played back
+            // anything despite receiving genuine RTP: GotAudioRtp (the obsolete overload this
+            // client calls below) decodes using audioSink's OWN internal format manager, which
+            // only ever gets populated by an explicit SetAudioSinkFormat call — never wired up
+            // here previously. WindowsAudioEndPoint happened to mask this by auto-initializing
+            // its sink format in its own constructor when the encoder supports exactly one
+            // format; AndroidAudioEndPoint has no such self-initialization, so its sink format
+            // stayed permanently empty and WritePlayback's format.IsEmpty() guard silently
+            // discarded every incoming packet for the entire session, no error, no log, nothing.
+            mediaSession.OnAudioFormatsNegotiated += negotiatedFormats =>
+                this.audioSink.SetAudioSinkFormat(negotiatedFormats.First());
+
             mediaSession.OnRtpPacketReceived += (remoteEndPoint, mediaType, rtpPacket) =>
             {
                 if (mediaType == SDPMediaTypesEnum.audio)
@@ -257,6 +448,35 @@ public class SipSorceryCallClient : ICallClient, IDisposable
                         rtpPacket.Header.PayloadType,
                         rtpPacket.Header.MarkerBit == 1,
                         rtpPacket.Payload);
+                }
+            };
+
+            // Received RTP is decoded and buffered into the sink's wave provider regardless
+            // (GotAudioRtp above), but nothing is ever actually played out loud until the sink's
+            // own playback device is started — confirmed via SIPSorceryMedia.Windows's
+            // WindowsAudioEndPoint source: StartAudio() (audioSource, above) only starts the
+            // *capture* device (_waveInEvent); playback only begins once StartAudioSink() calls
+            // _waveOutEvent.Play() separately. Without this, both call legs fully connect
+            // end-to-end (ICE, DTLS-SRTP, RTP flowing) with neither side ever hearing anything.
+            mediaSession.onconnectionstatechange += async state =>
+            {
+                try
+                {
+                    if (state == RTCPeerConnectionState.connected)
+                    {
+                        await this.audioSink.StartAudioSink();
+                        Logger.LogInformation("Audio sink started.");
+                    }
+                    else if (state is RTCPeerConnectionState.closed
+                        or RTCPeerConnectionState.failed
+                        or RTCPeerConnectionState.disconnected)
+                    {
+                        await this.audioSink.CloseAudioSink();
+                    }
+                }
+                catch (Exception exception)
+                {
+                    Logger.LogError(exception, "Failed handling audio sink state change to {State}.", state);
                 }
             };
         }

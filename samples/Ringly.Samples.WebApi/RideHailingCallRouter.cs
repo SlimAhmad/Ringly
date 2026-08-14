@@ -15,14 +15,19 @@ namespace Ringly.Samples.WebApi;
 public class RideHailingCallRouter : BackgroundService
 {
     private const string MixingBridgeType = "mixing";
+    private const string UpChannelState = "Up";
 
     private readonly IAsteriskBroker asteriskBroker;
     private readonly ILogger<RideHailingCallRouter> logger;
 
-    // Tracks channels this router originated itself (the callee leg) so their own StasisStart —
-    // which looks identical to any other entry at a glance — gets bridged in rather than
-    // mistaken for a second, unrelated client-dialed call.
-    private readonly ConcurrentDictionary<string, string> pendingBridgeIdByChannelId = new();
+    // Tracks channels this router originated itself (the callee leg) so the caller's leg isn't
+    // mistaken for one, and carries what's needed to finish connecting the call once the callee
+    // genuinely answers (see HandleChannelStateChangeAsync) — not on its own StasisStart, which
+    // fires the instant Asterisk creates the channel, well before the real device has rung, let
+    // alone answered.
+    private readonly ConcurrentDictionary<string, PendingCall> pendingCallByCalleeChannelId = new();
+
+    private sealed record PendingCall(string BridgeId, string CallerChannelId);
 
     public RideHailingCallRouter(IAsteriskBroker asteriskBroker, ILogger<RideHailingCallRouter> logger)
     {
@@ -32,10 +37,17 @@ public class RideHailingCallRouter : BackgroundService
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        IDisposable subscription = this.asteriskBroker.StreamStasisStartEvents()
+        IDisposable stasisSubscription = this.asteriskBroker.StreamStasisStartEvents()
             .Subscribe(stasisStartEvent => this.OnStasisStart(stasisStartEvent));
 
-        stoppingToken.Register(subscription.Dispose);
+        IDisposable stateChangeSubscription = this.asteriskBroker.StreamChannelStateChangeEvents()
+            .Subscribe(stateChangeEvent => this.OnChannelStateChange(stateChangeEvent));
+
+        stoppingToken.Register(() =>
+        {
+            stasisSubscription.Dispose();
+            stateChangeSubscription.Dispose();
+        });
 
         return Task.CompletedTask;
     }
@@ -55,27 +67,70 @@ public class RideHailingCallRouter : BackgroundService
         }
     }
 
+    private async void OnChannelStateChange(ChannelStateChangeEvent stateChangeEvent)
+    {
+        try
+        {
+            await this.HandleChannelStateChangeAsync(stateChangeEvent);
+        }
+        catch (Exception exception)
+        {
+            this.logger.LogError(
+                exception,
+                "Failed to bridge answered channel {ChannelId}",
+                stateChangeEvent.ChannelId);
+        }
+    }
+
     private async Task HandleStasisStartAsync(StasisStartEvent stasisStartEvent)
     {
-        if (this.pendingBridgeIdByChannelId.TryRemove(stasisStartEvent.ChannelId, out string? bridgeId))
+        if (this.pendingCallByCalleeChannelId.ContainsKey(stasisStartEvent.ChannelId))
         {
-            await this.asteriskBroker.AnswerChannelAsync(stasisStartEvent.ChannelId);
-            await this.asteriskBroker.AddChannelToBridgeAsync(bridgeId, stasisStartEvent.ChannelId);
+            // Our own originated (callee) leg entering Stasis — do nothing here. Answering or
+            // bridging it now (even without an explicit answer — joining a mixing bridge alone
+            // was confirmed to make Asterisk treat that as an implicit answer) is what caused
+            // every call to "answer" within 60-160ms of being dialed, before the callee's real
+            // device had even rung. Waiting for its ChannelStateChange to "Up" instead means the
+            // callee's own client genuinely has to answer first.
             return;
         }
 
         if (stasisStartEvent.Args.Count == 0)
         {
+            // Not a client-dialed entry into the ride_hailing dialplan (e.g. a leg
+            // Ringly.Samples.WebApi originated itself via StartCallSessionAsync/RouteToQueueAsync,
+            // which bridges its own channels directly and doesn't need this router).
             return;
         }
 
         string targetExtension = stasisStartEvent.Args[0];
 
-        await this.asteriskBroker.AnswerChannelAsync(stasisStartEvent.ChannelId);
+        // Send ringing indication (SIP 180 Ringing) rather than answering — answering this leg
+        // immediately was confirmed to make the caller's own client transition straight to an
+        // "answered" call state well before the callee had even started ringing, since ARI's
+        // answer action sends a real 200 OK back through the caller's SIP dialog. The caller
+        // leg is only actually answered once the callee genuinely answers (see
+        // HandleChannelStateChangeAsync below).
+        await this.asteriskBroker.RingChannelAsync(stasisStartEvent.ChannelId);
         Bridge bridge = await this.asteriskBroker.InsertBridgeAsync(MixingBridgeType);
-        await this.asteriskBroker.AddChannelToBridgeAsync(bridge.Id, stasisStartEvent.ChannelId);
 
         Channel targetChannel = await this.asteriskBroker.InsertChannelAsync($"PJSIP/{targetExtension}");
-        this.pendingBridgeIdByChannelId[targetChannel.ChannelId] = bridge.Id;
+        this.pendingCallByCalleeChannelId[targetChannel.ChannelId] =
+            new PendingCall(bridge.Id, stasisStartEvent.ChannelId);
+    }
+
+    private async Task HandleChannelStateChangeAsync(ChannelStateChangeEvent stateChangeEvent)
+    {
+        if (stateChangeEvent.State != UpChannelState)
+        {
+            return;
+        }
+
+        if (this.pendingCallByCalleeChannelId.TryRemove(stateChangeEvent.ChannelId, out PendingCall? pendingCall))
+        {
+            await this.asteriskBroker.AnswerChannelAsync(pendingCall.CallerChannelId);
+            await this.asteriskBroker.AddChannelToBridgeAsync(pendingCall.BridgeId, pendingCall.CallerChannelId);
+            await this.asteriskBroker.AddChannelToBridgeAsync(pendingCall.BridgeId, stateChangeEvent.ChannelId);
+        }
     }
 }

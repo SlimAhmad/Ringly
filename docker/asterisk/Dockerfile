@@ -14,6 +14,7 @@ RUN mkdir -p /etc/asterisk/keys && \
         -subj "/CN=localhost"
 
 COPY config/http.conf /etc/asterisk/
+COPY config/rtp.conf /etc/asterisk/
 COPY config/pjsip.conf /etc/asterisk/
 COPY config/extensions.conf /etc/asterisk/
 COPY config/ari.conf /etc/asterisk/

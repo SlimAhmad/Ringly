@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Plugin.Maui.Audio;
 using Ringly.Client.Abstractions;
 using Ringly.Client.Abstractions.Models;
 
@@ -7,28 +8,45 @@ namespace Ringly.Samples.Maui;
 public partial class CallPage : ContentPage
 {
     private readonly ICallClient callClient;
+    private readonly IAudioManager audioManager;
     private readonly ObservableCollection<string> eventLog = [];
     private IDisposable? eventSubscription;
     private IDispatcherTimer? callTimer;
+    private IAudioPlayer? tonePlayer;
     private CallHandle? currentCallHandle;
     private CallHandle? incomingCallHandle;
     private DateTimeOffset callAnsweredAt;
     private bool isMuted;
     private bool isSpeakerOn;
 
-    public CallPage(ICallClient callClient)
+    public CallPage(ICallClient callClient, IAudioManager audioManager)
     {
         InitializeComponent();
         this.callClient = callClient;
+        this.audioManager = audioManager;
         this.EventLogView.ItemsSource = this.eventLog;
     }
 
-    protected override void OnAppearing()
+    protected override async void OnAppearing()
     {
         base.OnAppearing();
 
         this.eventSubscription = this.callClient.StreamEvents().Subscribe(callEvent =>
             this.Dispatcher.Dispatch(() => this.HandleCallEvent(callEvent)));
+
+#if ANDROID
+        // AndroidAudioEndPoint's AudioRecord silently fails to initialize without this — Android
+        // 6+ requires an explicit runtime grant even though RECORD_AUDIO is declared in the
+        // manifest. Requested once up front here rather than deferred until the first call, so a
+        // denial surfaces immediately instead of as a confusing silent "no audio" later.
+        PermissionStatus microphoneStatus = await Permissions.RequestAsync<Permissions.Microphone>();
+
+        if (microphoneStatus != PermissionStatus.Granted)
+        {
+            this.eventLog.Insert(0,
+                $"{DateTimeOffset.Now:HH:mm:ss} Microphone permission denied — calls will have no audio.");
+        }
+#endif
     }
 
     protected override void OnDisappearing()
@@ -36,6 +54,7 @@ public partial class CallPage : ContentPage
         base.OnDisappearing();
         this.eventSubscription?.Dispose();
         this.StopCallTimer();
+        this.StopTone();
     }
 
     private void HandleCallEvent(CallClientEvent callEvent)
@@ -208,6 +227,7 @@ public partial class CallPage : ContentPage
     private void ShowSetup()
     {
         this.StopCallTimer();
+        this.StopTone();
         this.SetupView.IsVisible = true;
         this.InCallView.IsVisible = false;
         this.CallFailedLabel.IsVisible = false;
@@ -229,6 +249,8 @@ public partial class CallPage : ContentPage
         this.DialingButtons.IsVisible = true;
         this.ActiveCallButtons.IsVisible = false;
         this.IncomingCallButtons.IsVisible = false;
+
+        this.PlayTone(ToneGenerator.CreateRingbackTone());
     }
 
     private void ShowIncoming(string callerExtension)
@@ -245,10 +267,13 @@ public partial class CallPage : ContentPage
         this.DialingButtons.IsVisible = false;
         this.ActiveCallButtons.IsVisible = false;
         this.IncomingCallButtons.IsVisible = true;
+
+        this.PlayTone(ToneGenerator.CreateRingTone());
     }
 
     private void ShowActive()
     {
+        this.StopTone();
         this.SetupView.IsVisible = false;
         this.InCallView.IsVisible = true;
         this.CallFailedLabel.IsVisible = false;
@@ -266,10 +291,34 @@ public partial class CallPage : ContentPage
     private void ShowCallFailed()
     {
         this.StopCallTimer();
+        this.StopTone();
         this.SetupView.IsVisible = true;
         this.InCallView.IsVisible = false;
         this.CallFailedLabel.Text = "Call ended unexpectedly — see event log below.";
         this.CallFailedLabel.IsVisible = true;
+    }
+
+    private void PlayTone(Stream toneWav)
+    {
+        this.StopTone();
+
+        try
+        {
+            this.tonePlayer = this.audioManager.CreatePlayer(toneWav);
+            this.tonePlayer.Loop = true;
+            this.tonePlayer.Play();
+        }
+        catch (Exception exception)
+        {
+            this.eventLog.Insert(0, $"{DateTimeOffset.Now:HH:mm:ss} Tone playback failed: {exception.Message}");
+        }
+    }
+
+    private void StopTone()
+    {
+        this.tonePlayer?.Stop();
+        this.tonePlayer?.Dispose();
+        this.tonePlayer = null;
     }
 
     private void StartCallTimer()
