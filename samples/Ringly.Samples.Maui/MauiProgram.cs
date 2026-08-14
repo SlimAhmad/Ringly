@@ -66,6 +66,19 @@ public static class MauiProgram
             options.IceServerCredential = "ringly-dev-turn";
         });
 
+#if WINDOWS
+        // Real microphone/speaker access — no equivalent exists for Android yet (no
+        // SIPSorceryMedia.Android package; would need a hand-written AudioRecord/AudioTrack
+        // source/sink), so that side stays signaling-only for now. WindowsAudioEndPoint
+        // implements both SIPSorceryMedia.Abstractions.IAudioSource and IAudioSink — registering
+        // the one instance under both interfaces lets SipSorceryCallClient's optional
+        // constructor parameters resolve it for both directions.
+        var audioEncoder = new SIPSorcery.Media.AudioEncoder();
+        var windowsAudioEndPoint = new SIPSorceryMedia.Windows.WindowsAudioEndPoint(audioEncoder);
+        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSource>(windowsAudioEndPoint);
+        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSink>(windowsAudioEndPoint);
+#endif
+
         builder.Services.AddSingleton<ICallClient, SipSorceryCallClient>();
         builder.Services.AddSingleton<CallPage>();
 

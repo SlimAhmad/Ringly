@@ -161,10 +161,59 @@ as `1001`) now shows the router answering and bridging the caller, then
 cleanly catching and logging the expected origination failure for the
 unreachable target — no crash, no silent hang, no more the caller just being
 parked with nothing happening. Signaling, routing, media negotiation, and
-now call bridging are all proven working end to end. What's left is a fully
-answered call between two live parties, which needs a second real registered
-client to test against — either a second device or the Windows build (its
-known CLI issue above) — not yet verified.
+call bridging are all proven working end to end. A call between two live,
+registered instances (over a direct connection, bypassing the playit.gg
+tunnel — see below) reached a fully connected media session: SDP negotiated,
+ICE connected, DTLS handshake completed, SRTP fingerprint matched — the
+deepest point reachable without real audio actually flowing (it then hangs
+up after ~30s of RTP silence, which is exactly what happened, since nothing
+was generating real audio yet — see "Real audio" below).
+
+## Real audio (SIPSorceryMedia.Windows)
+
+The signaling proof above still didn't answer "shouldn't I hear voice back?"
+— it didn't, because nothing was capturing a microphone or playing received
+audio. `CreateMediaSession()`'s `MediaStreamTrack` only *declared* PCMU
+support so SDP negotiation would succeed; it was never connected to a real
+audio device. Fixed for **Windows**: `SipSorceryCallClient` now takes
+optional `IAudioSource`/`IAudioSink` (from `SIPSorceryMedia.Abstractions`,
+already referenced) via constructor injection, wired to the peer connection's
+`OnAudioSourceEncodedSample`/`OnAudioFormatsNegotiated`/`OnRtpPacketReceived`
+hooks — resolved via Microsoft.Extensions.DependencyInjection's built-in
+"fall back to the parameter's default (`null`) when nothing's registered"
+behavior, so this stays a no-op wherever nothing's wired up. `MauiProgram.cs`
+constructs a `SIPSorceryMedia.Windows.WindowsAudioEndPoint` (real mic
+capture + speaker playback via NAudio) and registers it under both
+interfaces, `#if WINDOWS` only — that package needs a Windows-specific TFM
+`Ringly.Client.SipSorcery` (cross-platform) can't take on itself.
+
+`ICallClient` also gained `MuteAsync`/`UnmuteAsync` (pauses/resumes the
+injected `IAudioSource`; a no-op without one).
+
+**Android has no equivalent yet** — there's no official `SIPSorceryMedia.Android`
+package. The real fix is a hand-written audio source/sink using Android's
+native `AudioRecord`/`AudioTrack` APIs (plus the `RECORD_AUDIO` runtime
+permission) — not yet built, tracked as the next concrete step for that side.
+[`Plugin.Maui.Audio`](https://github.com/jfversluis/Plugin.Maui.Audio)'s
+`AudioStreamer` would solve the *capture* half cross-platform (confirmed: it
+exposes a real-time raw-PCM callback, not just record-to-file) — but not
+playback, which only supports finished files/streams, not a live incoming
+RTP-derived PCM feed. Android would still need its own `AudioTrack`-based
+sink either way.
+
+Until Android has a real audio path, calls to/from an Android instance stay
+signaling-only (connects and negotiates correctly, but silent both ways) —
+the Windows↔Windows path is the one to use for testing actual voice.
+
+## Call screen
+
+`CallPage` now has a dedicated in-call view (not just an event log) — shown
+while dialing, ringing (incoming), or connected: an avatar-initial circle,
+call state ("Calling" / "Incoming call" / "In call with"), the remote
+extension, a live `mm:ss` timer once answered, and Speaker/End/Mute (or
+Answer/Decline while incoming) buttons. Mute is real (see above); Speaker is
+currently UI-only — there's no speaker/earpiece routing concept on Windows
+desktop audio, and Android has no audio device to route yet either.
 
 ## Testing from a real, remote device
 

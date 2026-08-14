@@ -19,10 +19,27 @@ public class SipSorceryCallClient : ICallClient, IDisposable
     private readonly Dictionary<string, SIPServerUserAgent> pendingIncomingCalls;
     private readonly Dictionary<string, RTCPeerConnection> activeMediaSessions;
     private readonly RTCConfiguration rtcConfiguration;
+    private readonly IAudioSource? audioSource;
+    private readonly IAudioSink? audioSink;
     private SipCredentials? registeredCredentials;
 
-    public SipSorceryCallClient(IOptions<SipSorceryCallOptions> options)
+    // audioSource/audioSink are optional and platform-specific — this library has no built-in
+    // microphone/speaker access of its own (SIPSorcery's own platform audio packages, e.g.
+    // SIPSorceryMedia.Windows, need a platform-specific TFM this cross-platform project doesn't
+    // have). Without them, calls still negotiate real SDP and connect (proven working), but no
+    // actual audio flows — Asterisk's RTP-timeout hangs the call up after ~30s of silence
+    // either way. Callers that want real two-way audio construct a platform audio endpoint
+    // (e.g. SIPSorceryMedia.Windows's WindowsAudioEndPoint implements both interfaces) and
+    // register it for DI; Microsoft.Extensions.DependencyInjection resolves these to null via
+    // the default parameter when nothing's registered, so this stays a no-op on platforms
+    // (e.g. Android) that don't provide one.
+    public SipSorceryCallClient(
+        IOptions<SipSorceryCallOptions> options,
+        IAudioSource? audioSource = null,
+        IAudioSink? audioSink = null)
     {
+        this.audioSource = audioSource;
+        this.audioSink = audioSink;
         this.options = options.Value;
         this.events = new Subject<CallClientEvent>();
         this.pendingIncomingCalls = [];
@@ -147,6 +164,24 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         return ValueTask.CompletedTask;
     }
 
+    // No-op without a real audioSource (e.g. Android, which has none wired up yet) — there's
+    // no audio being sent to pause in the first place.
+    public async ValueTask MuteAsync()
+    {
+        if (this.audioSource is not null)
+        {
+            await this.audioSource.PauseAudio();
+        }
+    }
+
+    public async ValueTask UnmuteAsync()
+    {
+        if (this.audioSource is not null)
+        {
+            await this.audioSource.ResumeAudio();
+        }
+    }
+
     public IObservable<CallClientEvent> StreamEvents() => this.events;
 
     public void Dispose()
@@ -176,17 +211,55 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         // Without a track, the generated SDP has no "m=" line at all — confirmed against a
         // real Asterisk instance: an offer of just "v=0/o=.../s=sipsorcery/t=0 0" with no media
         // description is correctly rejected with "488 Not Acceptable Here" (there's nothing to
-        // negotiate). PCMU/PCMA are Asterisk's two allowed codecs for these test endpoints
-        // (docker/asterisk/seed-test-endpoint.sql's "allow" list also includes opus, but PCMU/
-        // PCMA need no extra codec package here). This declares the codecs a real call needs;
-        // it does not by itself wire up microphone capture or speaker playback — callers still
-        // need to attach an audio source/sink (e.g. via SIPSorceryMedia.Abstractions platform
-        // bindings) for two-way audio, only signaling/negotiation is guaranteed to work here.
-        var audioTrack = new MediaStreamTrack(
-            new AudioFormat(SDPWellKnownMediaFormatsEnum.PCMU),
-            MediaStreamStatusEnum.SendRecv);
+        // negotiate). When a real audioSource is available, advertise what it can actually
+        // produce; otherwise fall back to declaring PCMU alone — enough for SDP to negotiate,
+        // but with no real audio behind it (signaling-only, confirmed working end to end without
+        // an audioSource/audioSink).
+        List<AudioFormat> formats = this.audioSource?.GetAudioSourceFormats()
+            ?? [new AudioFormat(SDPWellKnownMediaFormatsEnum.PCMU)];
 
+        var audioTrack = new MediaStreamTrack(formats, MediaStreamStatusEnum.SendRecv);
         mediaSession.addTrack(audioTrack);
+
+        if (this.audioSource is not null)
+        {
+            this.audioSource.OnAudioSourceEncodedSample += mediaSession.SendAudio;
+
+            mediaSession.OnAudioFormatsNegotiated += negotiatedFormats =>
+                this.audioSource.SetAudioSourceFormat(negotiatedFormats.First());
+
+            mediaSession.onconnectionstatechange += async state =>
+            {
+                if (state == RTCPeerConnectionState.connected)
+                {
+                    await this.audioSource.StartAudio();
+                }
+                else if (state is RTCPeerConnectionState.closed
+                    or RTCPeerConnectionState.failed
+                    or RTCPeerConnectionState.disconnected)
+                {
+                    await this.audioSource.CloseAudio();
+                }
+            };
+        }
+
+        if (this.audioSink is not null)
+        {
+            mediaSession.OnRtpPacketReceived += (remoteEndPoint, mediaType, rtpPacket) =>
+            {
+                if (mediaType == SDPMediaTypesEnum.audio)
+                {
+                    this.audioSink.GotAudioRtp(
+                        remoteEndPoint,
+                        rtpPacket.Header.SyncSource,
+                        rtpPacket.Header.SequenceNumber,
+                        rtpPacket.Header.Timestamp,
+                        rtpPacket.Header.PayloadType,
+                        rtpPacket.Header.MarkerBit == 1,
+                        rtpPacket.Payload);
+                }
+            };
+        }
 
         return mediaSession;
     }
@@ -197,7 +270,7 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         var handle = new CallHandle { Id = Guid.NewGuid().ToString() };
         this.pendingIncomingCalls[handle.Id] = uas;
 
-        this.PublishEvent("IncomingCall", handle);
+        this.PublishEvent("IncomingCall", handle, sipRequest.Header.From.FromURI.User);
     }
 
     private void HandleDtmfTone(byte tone, int durationMs) =>
@@ -212,11 +285,12 @@ public class SipSorceryCallClient : ICallClient, IDisposable
     private void HandleClientCallFailed(ISIPClientUserAgent uac, string errorMessage, SIPResponse sipResponse) =>
         this.PublishEvent("CallFailed", new CallHandle());
 
-    private void PublishEvent(string eventType, CallHandle handle) =>
+    private void PublishEvent(string eventType, CallHandle handle, string remoteExtension = "") =>
         this.events.OnNext(new CallClientEvent
         {
             EventType = eventType,
             Handle = handle,
-            OccurredDate = DateTimeOffset.UtcNow
+            OccurredDate = DateTimeOffset.UtcNow,
+            RemoteExtension = remoteExtension
         });
 }

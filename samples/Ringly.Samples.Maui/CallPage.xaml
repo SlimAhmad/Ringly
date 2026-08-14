@@ -2,51 +2,128 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="Ringly.Samples.Maui.CallPage"
-             Title="Ringly Call Sample">
+             Title="Ringly Call Sample"
+             BackgroundColor="#12141C">
 
-    <ScrollView>
-        <VerticalStackLayout Padding="20" Spacing="16">
+    <Grid>
 
-            <Label Text="Ringly.Client.SipSorcery — end-to-end call demo"
-                   FontSize="18" FontAttributes="Bold" />
-            <Label Text="Run two instances of this app (e.g. two Windows windows, or Windows + Android) — register each as a different extension, then place a call from one to the other." />
+        <!-- Setup: register + dial. Hidden once a call is ringing/incoming/active. -->
+        <ScrollView x:Name="SetupView">
+            <VerticalStackLayout Padding="20" Spacing="16">
 
-            <BoxView HeightRequest="1" Color="LightGray" />
+                <Label Text="Ringly.Client.SipSorcery — end-to-end call demo"
+                       FontSize="18" FontAttributes="Bold" TextColor="White" />
+                <Label Text="Run two instances of this app (e.g. two Windows windows, or Windows + Android) — register each as a different extension, then place a call from one to the other."
+                       TextColor="#9AA0B4" />
 
-            <Label Text="1. Register" FontAttributes="Bold" />
-            <Entry x:Name="ExtensionEntry" Placeholder="Your extension (e.g. 1000)" />
-            <Entry x:Name="PasswordEntry" Placeholder="Your password" IsPassword="True" />
-            <Button Text="Register" Clicked="OnRegisterClicked" />
-            <Label x:Name="RegistrationStatusLabel" Text="Not registered" TextColor="Gray" />
+                <BoxView HeightRequest="1" Color="#2A2E3F" />
 
-            <BoxView HeightRequest="1" Color="LightGray" />
+                <Label Text="1. Register" FontAttributes="Bold" TextColor="White" />
+                <Entry x:Name="ExtensionEntry" Placeholder="Your extension (e.g. 1000)"
+                       TextColor="White" PlaceholderColor="#6B7086" />
+                <Entry x:Name="PasswordEntry" Placeholder="Your password" IsPassword="True"
+                       TextColor="White" PlaceholderColor="#6B7086" />
+                <Button Text="Register" Clicked="OnRegisterClicked"
+                        BackgroundColor="#5B4CE0" TextColor="White" CornerRadius="24" />
+                <Label x:Name="RegistrationStatusLabel" Text="Not registered" TextColor="#9AA0B4" />
 
-            <Label Text="2. Place a call" FontAttributes="Bold" />
-            <Entry x:Name="TargetExtensionEntry" Placeholder="Extension to call (e.g. 1001)" />
-            <Button Text="Call" Clicked="OnCallClicked" />
-            <Button Text="Hang Up" Clicked="OnHangupClicked" />
+                <BoxView HeightRequest="1" Color="#2A2E3F" />
 
-            <BoxView HeightRequest="1" Color="LightGray" />
+                <Label Text="2. Place a call" FontAttributes="Bold" TextColor="White" />
+                <Entry x:Name="TargetExtensionEntry" Placeholder="Extension to call (e.g. 1001)"
+                       TextColor="White" PlaceholderColor="#6B7086" />
+                <Button Text="Call" Clicked="OnCallClicked"
+                        BackgroundColor="#5B4CE0" TextColor="White" CornerRadius="24" />
 
-            <Label x:Name="IncomingCallLabel" Text="Incoming call..." IsVisible="False"
-                   FontAttributes="Bold" TextColor="OrangeRed" />
-            <HorizontalStackLayout x:Name="IncomingCallButtons" IsVisible="False" Spacing="12">
-                <Button Text="Answer" Clicked="OnAnswerClicked" />
-                <Button Text="Decline" Clicked="OnDeclineClicked" />
+                <BoxView HeightRequest="1" Color="#2A2E3F" />
+
+                <Label Text="Event log" FontAttributes="Bold" TextColor="White" />
+                <CollectionView x:Name="EventLogView" HeightRequest="240">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <Label Text="{Binding .}" FontSize="12" TextColor="#9AA0B4" />
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- In-call overlay: covers the whole page while ringing, dialing, incoming, or connected. -->
+        <Grid x:Name="InCallView" IsVisible="False" BackgroundColor="#171A26" RowDefinitions="*,Auto,Auto,Auto,60">
+
+            <VerticalStackLayout Grid.Row="0" VerticalOptions="Center" Spacing="16">
+                <Border StrokeShape="RoundRectangle 60" BackgroundColor="#5B4CE0"
+                        WidthRequest="120" HeightRequest="120" HorizontalOptions="Center">
+                    <Label x:Name="CallAvatarLabel" Text="?" FontSize="40" FontAttributes="Bold"
+                           TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" />
+                </Border>
+
+                <Label x:Name="CallStateLabel" Text="Calling"
+                       FontSize="14" TextColor="#9AA0B4" HorizontalOptions="Center" />
+                <Label x:Name="CallTargetLabel" Text=""
+                       FontSize="26" FontAttributes="Bold" TextColor="White" HorizontalOptions="Center" />
+                <Label x:Name="CallTimerLabel" Text="" IsVisible="False"
+                       FontSize="16" TextColor="#4CD97B" HorizontalOptions="Center" />
+            </VerticalStackLayout>
+
+            <!-- Active-call controls: Speaker / End / Mute. -->
+            <HorizontalStackLayout x:Name="ActiveCallButtons" Grid.Row="2" IsVisible="False"
+                                    Spacing="36" HorizontalOptions="Center" Margin="0,0,0,12">
+                <VerticalStackLayout Spacing="6">
+                    <Button x:Name="SpeakerButton" Text="🔊" FontSize="20" Clicked="OnSpeakerClicked"
+                            BackgroundColor="#2A2E3F" TextColor="White"
+                            WidthRequest="56" HeightRequest="56" CornerRadius="28" />
+                    <Label Text="Speaker" FontSize="12" TextColor="#9AA0B4" HorizontalOptions="Center" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Spacing="6">
+                    <Button Text="⏹" FontSize="20" Clicked="OnHangupClicked"
+                            BackgroundColor="#E5615B" TextColor="White"
+                            WidthRequest="64" HeightRequest="64" CornerRadius="32" />
+                    <Label Text="End" FontSize="12" TextColor="#9AA0B4" HorizontalOptions="Center" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Spacing="6">
+                    <Button x:Name="MuteButton" Text="🎙" FontSize="20" Clicked="OnMuteClicked"
+                            BackgroundColor="#2A2E3F" TextColor="White"
+                            WidthRequest="56" HeightRequest="56" CornerRadius="28" />
+                    <Label Text="Mute" FontSize="12" TextColor="#9AA0B4" HorizontalOptions="Center" />
+                </VerticalStackLayout>
             </HorizontalStackLayout>
 
-            <BoxView HeightRequest="1" Color="LightGray" />
+            <!-- Outgoing/dialing controls: just End, before the far side answers. -->
+            <VerticalStackLayout x:Name="DialingButtons" Grid.Row="2" IsVisible="False"
+                                  Spacing="6" HorizontalOptions="Center" Margin="0,0,0,12">
+                <Button Text="⏹" FontSize="20" Clicked="OnHangupClicked"
+                        BackgroundColor="#E5615B" TextColor="White"
+                        WidthRequest="64" HeightRequest="64" CornerRadius="32" />
+                <Label Text="Cancel" FontSize="12" TextColor="#9AA0B4" HorizontalOptions="Center" />
+            </VerticalStackLayout>
 
-            <Label Text="Event log" FontAttributes="Bold" />
-            <CollectionView x:Name="EventLogView" HeightRequest="240">
-                <CollectionView.ItemTemplate>
-                    <DataTemplate>
-                        <Label Text="{Binding .}" FontSize="12" />
-                    </DataTemplate>
-                </CollectionView.ItemTemplate>
-            </CollectionView>
+            <!-- Incoming-call controls: Decline / Answer. -->
+            <HorizontalStackLayout x:Name="IncomingCallButtons" Grid.Row="2" IsVisible="False"
+                                    Spacing="48" HorizontalOptions="Center" Margin="0,0,0,12">
+                <VerticalStackLayout Spacing="6">
+                    <Button Text="✕" FontSize="22" Clicked="OnDeclineClicked"
+                            BackgroundColor="#E5615B" TextColor="White"
+                            WidthRequest="64" HeightRequest="64" CornerRadius="32" />
+                    <Label Text="Decline" FontSize="12" TextColor="#9AA0B4" HorizontalOptions="Center" />
+                </VerticalStackLayout>
 
-        </VerticalStackLayout>
-    </ScrollView>
+                <VerticalStackLayout Spacing="6">
+                    <Button Text="✓" FontSize="22" Clicked="OnAnswerClicked"
+                            BackgroundColor="#4CD97B" TextColor="White"
+                            WidthRequest="64" HeightRequest="64" CornerRadius="32" />
+                    <Label Text="Answer" FontSize="12" TextColor="#9AA0B4" HorizontalOptions="Center" />
+                </VerticalStackLayout>
+            </HorizontalStackLayout>
+
+            <Label x:Name="CallFailedLabel" Grid.Row="3" Text="" IsVisible="False"
+                   FontSize="13" TextColor="#E5615B" HorizontalOptions="Center" Margin="20,0" />
+
+        </Grid>
+
+    </Grid>
 
 </ContentPage>
