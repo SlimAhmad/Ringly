@@ -33,7 +33,10 @@
 		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
 		<WindowsPackageType>None</WindowsPackageType>
 
-		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
+		<!-- 23.0 (not the MAUI-template default of 21.0): CustomWindowsAudioEndPoint's Android
+	     counterpart, AndroidAudioEndPoint, needs AudioTrack.Builder/AudioAttributes for correct
+	     VoIP audio routing (see its own file for why), which requires API 23+. -->
+	<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">23.0</SupportedOSPlatformVersion>
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
 		<TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</TargetPlatformMinVersion>
 	</PropertyGroup>
@@ -59,13 +62,16 @@
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
+		<!-- Cross-platform (Android + Windows) audio playback for the dial/ring tones — avoids
+		     needing separate platform-specific players for a simple looped in-memory WAV clip. -->
+		<PackageReference Include="Plugin.Maui.Audio" Version="4.0.0" />
 	</ItemGroup>
 
 	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
-		<!-- Real microphone/speaker access for the Windows target — no equivalent official
-		     package exists for Android (SIPSorceryMedia.Android doesn't exist); that side stays
-		     signaling-only for now, tracked as follow-up work. -->
-		<PackageReference Include="SIPSorceryMedia.Windows" Version="10.0.15" />
+		<!-- Real microphone/speaker access for the Windows target, via CustomWindowsAudioEndPoint
+		     (see Platforms/Windows/CustomWindowsAudioEndPoint.cs for why this hand-rolls NAudio
+		     directly instead of using SIPSorceryMedia.Windows's WindowsAudioEndPoint). -->
+		<PackageReference Include="NAudio" Version="2.3.0" />
 	</ItemGroup>
 
 	<ItemGroup>

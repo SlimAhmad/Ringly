@@ -22,6 +22,9 @@ public partial class AsteriskBroker
     public async ValueTask AnswerChannelAsync(string channelId) =>
         await this.PostAsync($"{ChannelsRelativeUrl}/{Uri.EscapeDataString(channelId)}/answer");
 
+    public async ValueTask RingChannelAsync(string channelId) =>
+        await this.PostAsync($"{ChannelsRelativeUrl}/{Uri.EscapeDataString(channelId)}/ring");
+
     private static bool IsEventType(JsonElement ariEvent, string eventType) =>
         ariEvent.TryGetProperty("type", out JsonElement type) &&
         type.GetString() == eventType;

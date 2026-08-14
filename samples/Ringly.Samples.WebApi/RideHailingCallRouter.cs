@@ -21,10 +21,13 @@ public class RideHailingCallRouter : BackgroundService
     private readonly ILogger<RideHailingCallRouter> logger;
 
     // Tracks channels this router originated itself (the callee leg) so the caller's leg isn't
-    // mistaken for one, and so the callee leg only gets bridged once it's genuinely answered
-    // (see HandleChannelStateChangeAsync) — not on its own StasisStart, which fires the instant
-    // Asterisk creates the channel, well before the real device has rung, let alone answered.
-    private readonly ConcurrentDictionary<string, string> pendingBridgeIdByChannelId = new();
+    // mistaken for one, and carries what's needed to finish connecting the call once the callee
+    // genuinely answers (see HandleChannelStateChangeAsync) — not on its own StasisStart, which
+    // fires the instant Asterisk creates the channel, well before the real device has rung, let
+    // alone answered.
+    private readonly ConcurrentDictionary<string, PendingCall> pendingCallByCalleeChannelId = new();
+
+    private sealed record PendingCall(string BridgeId, string CallerChannelId);
 
     public RideHailingCallRouter(IAsteriskBroker asteriskBroker, ILogger<RideHailingCallRouter> logger)
     {
@@ -81,14 +84,14 @@ public class RideHailingCallRouter : BackgroundService
 
     private async Task HandleStasisStartAsync(StasisStartEvent stasisStartEvent)
     {
-        if (this.pendingBridgeIdByChannelId.ContainsKey(stasisStartEvent.ChannelId))
+        if (this.pendingCallByCalleeChannelId.ContainsKey(stasisStartEvent.ChannelId))
         {
-            // Our own originated (callee) leg entering Stasis — do nothing here. Bridging it
-            // now (even without an explicit answer) was confirmed to make Asterisk treat a
-            // mixing bridge join as an implicit answer, which is what caused every call to
-            // "answer" within 60-160ms of being dialed — before the callee's real device had
-            // even rung. Waiting for its ChannelStateChange to "Up" instead means the callee's
-            // own client genuinely has to answer first.
+            // Our own originated (callee) leg entering Stasis — do nothing here. Answering or
+            // bridging it now (even without an explicit answer — joining a mixing bridge alone
+            // was confirmed to make Asterisk treat that as an implicit answer) is what caused
+            // every call to "answer" within 60-160ms of being dialed, before the callee's real
+            // device had even rung. Waiting for its ChannelStateChange to "Up" instead means the
+            // callee's own client genuinely has to answer first.
             return;
         }
 
@@ -102,12 +105,18 @@ public class RideHailingCallRouter : BackgroundService
 
         string targetExtension = stasisStartEvent.Args[0];
 
-        await this.asteriskBroker.AnswerChannelAsync(stasisStartEvent.ChannelId);
+        // Send ringing indication (SIP 180 Ringing) rather than answering — answering this leg
+        // immediately was confirmed to make the caller's own client transition straight to an
+        // "answered" call state well before the callee had even started ringing, since ARI's
+        // answer action sends a real 200 OK back through the caller's SIP dialog. The caller
+        // leg is only actually answered once the callee genuinely answers (see
+        // HandleChannelStateChangeAsync below).
+        await this.asteriskBroker.RingChannelAsync(stasisStartEvent.ChannelId);
         Bridge bridge = await this.asteriskBroker.InsertBridgeAsync(MixingBridgeType);
-        await this.asteriskBroker.AddChannelToBridgeAsync(bridge.Id, stasisStartEvent.ChannelId);
 
         Channel targetChannel = await this.asteriskBroker.InsertChannelAsync($"PJSIP/{targetExtension}");
-        this.pendingBridgeIdByChannelId[targetChannel.ChannelId] = bridge.Id;
+        this.pendingCallByCalleeChannelId[targetChannel.ChannelId] =
+            new PendingCall(bridge.Id, stasisStartEvent.ChannelId);
     }
 
     private async Task HandleChannelStateChangeAsync(ChannelStateChangeEvent stateChangeEvent)
@@ -117,9 +126,11 @@ public class RideHailingCallRouter : BackgroundService
             return;
         }
 
-        if (this.pendingBridgeIdByChannelId.TryRemove(stateChangeEvent.ChannelId, out string? bridgeId))
+        if (this.pendingCallByCalleeChannelId.TryRemove(stateChangeEvent.ChannelId, out PendingCall? pendingCall))
         {
-            await this.asteriskBroker.AddChannelToBridgeAsync(bridgeId, stateChangeEvent.ChannelId);
+            await this.asteriskBroker.AnswerChannelAsync(pendingCall.CallerChannelId);
+            await this.asteriskBroker.AddChannelToBridgeAsync(pendingCall.BridgeId, pendingCall.CallerChannelId);
+            await this.asteriskBroker.AddChannelToBridgeAsync(pendingCall.BridgeId, stateChangeEvent.ChannelId);
         }
     }
 }

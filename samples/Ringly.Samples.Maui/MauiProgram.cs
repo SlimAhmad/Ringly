@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Maui.Devices;
+using Plugin.Maui.Audio;
 using Ringly.Client.Abstractions;
 using Ringly.Client.SipSorcery;
 
@@ -20,6 +21,8 @@ public static class MauiProgram
                 fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
             });
 
+        builder.AddAudio();
+
         builder.Logging.AddDebug();
 #if ANDROID
         string logDir = Android.App.Application.Context.GetExternalFilesDir(null)?.AbsolutePath ?? FileSystem.AppDataDirectory;
@@ -37,13 +40,21 @@ public static class MauiProgram
         // "10.0.2.2" is its documented, fixed alias for the host machine's loopback, confirmed
         // by directly testing from an emulator shell (`nc -z 10.0.2.2 8089` succeeds,
         // `nc -z localhost 8089` is refused — localhost inside the emulator is the emulator
-        // itself, not the host). A real Android device is on neither of those networks — it
-        // needs your machine's actual LAN IP instead (find it with `ipconfig`), and the docker
-        // stack's published ports need to be reachable from your LAN (Windows Firewall and, if
-        // applicable, your router/AP client-isolation settings can block this even when the
-        // ports are correctly published), or tunneled (e.g. ngrok) if it's off-network entirely
-        // — neither verified here, only the emulator case was.
-        string host = DeviceInfo.Platform == DevicePlatform.Android ? "10.0.2.2" : "localhost";
+        // itself, not the host). A real Android device is on NEITHER of those networks — it's
+        // just another device on the same LAN, and needs the host machine's actual routable LAN
+        // IP instead (find it with `ipconfig` — this is also what coturn's
+        // docker/coturn/turnserver.conf external-ip is set to, and needs updating alongside it if
+        // this network changes). DeviceInfo.Current.DeviceType distinguishes an emulator
+        // (Virtual) from a real device (Physical) so both can be tested without editing this by
+        // hand each time. The docker stack's published ports need to be reachable from your LAN
+        // (Windows Firewall and, if applicable, your router/AP client-isolation settings can
+        // block this even when the ports are correctly published), or tunneled (e.g. ngrok) if
+        // it's off-network entirely.
+        const string LanHostAddress = "10.253.155.49";
+
+        string host = DeviceInfo.Platform == DevicePlatform.Android
+            ? (DeviceInfo.Current.DeviceType == DeviceType.Virtual ? "10.0.2.2" : LanHostAddress)
+            : "localhost";
 
         builder.Services.Configure<SipSorceryCallOptions>(options =>
         {
@@ -67,16 +78,56 @@ public static class MauiProgram
         });
 
 #if WINDOWS
-        // Real microphone/speaker access — no equivalent exists for Android yet (no
-        // SIPSorceryMedia.Android package; would need a hand-written AudioRecord/AudioTrack
-        // source/sink), so that side stays signaling-only for now. WindowsAudioEndPoint
-        // implements both SIPSorceryMedia.Abstractions.IAudioSource and IAudioSink — registering
-        // the one instance under both interfaces lets SipSorceryCallClient's optional
-        // constructor parameters resolve it for both directions.
+        // Diagnostic: log every capture device NAudio's WaveInEvent (the legacy WinMM API
+        // WindowsAudioEndPoint uses internally) actually sees, and which one index -1/default
+        // resolves to. This machine has multiple audio devices registered (a Bluetooth-paired
+        // phone as a hands-free device, an EShare virtual mic alongside the real Realtek
+        // microphone array) — WinMM's own device ordering/"default" concept is a legacy API
+        // that can disagree with what Windows Sound Settings shows as the default communications
+        // device, especially with several devices in play. Written directly to the log file
+        // (not via ILogger) since WindowsAudioEndPoint is constructed before the DI container
+        // — and therefore the real ILoggerFactory — exists.
+        try
+        {
+            string deviceLogPath = Path.Combine(logDir, "ringly-debug.log");
+            var deviceLogLines = new List<string> { $"{DateTimeOffset.UtcNow:HH:mm:ss.fff} [Information] NAudio device enumeration: WaveInEvent.DeviceCount={NAudio.Wave.WaveInEvent.DeviceCount}" };
+
+            for (int i = 0; i < NAudio.Wave.WaveInEvent.DeviceCount; i++)
+            {
+                var capabilities = NAudio.Wave.WaveInEvent.GetCapabilities(i);
+                deviceLogLines.Add($"{DateTimeOffset.UtcNow:HH:mm:ss.fff} [Information]   WaveIn device {i}: \"{capabilities.ProductName}\" ({capabilities.Channels} channel(s))");
+            }
+
+            byte[] deviceLogBytes = System.Text.Encoding.UTF8.GetBytes(string.Join(Environment.NewLine, deviceLogLines) + Environment.NewLine);
+            using var deviceLogStream = new FileStream(deviceLogPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+            deviceLogStream.Write(deviceLogBytes, 0, deviceLogBytes.Length);
+        }
+        catch (Exception)
+        {
+        }
+
+        // Real microphone/speaker access via CustomWindowsAudioEndPoint (see its own file for
+        // why this hand-rolls NAudio's WASAPI capture directly instead of using
+        // SIPSorceryMedia.Windows's WindowsAudioEndPoint, and why WASAPI specifically instead of
+        // the legacy WinMM device-index approach this used earlier — that produced every step
+        // reporting success, including with an explicit device pin, yet the other party
+        // consistently received digital silence with no visibility into why). Registering the
+        // one instance under both interfaces lets SipSorceryCallClient's optional constructor
+        // parameters resolve it for both directions. Capture device selection is now handled
+        // internally via the Communications-role default endpoint (see StartAudio()), not an
+        // explicit index — the device enumeration logged above remains useful diagnostic context
+        // even though it no longer drives an explicit index.
         var audioEncoder = new SIPSorcery.Media.AudioEncoder();
-        var windowsAudioEndPoint = new SIPSorceryMedia.Windows.WindowsAudioEndPoint(audioEncoder);
+        var windowsAudioEndPoint = new Ringly.Samples.Maui.Platforms.Windows.CustomWindowsAudioEndPoint(audioEncoder);
         builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSource>(windowsAudioEndPoint);
         builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSink>(windowsAudioEndPoint);
+#elif ANDROID
+        // No official SIPSorceryMedia.Android package exists — AndroidAudioEndPoint hand-rolls
+        // the same source/sink surface via AudioRecord/AudioTrack (see its own file for why).
+        var androidAudioEncoder = new SIPSorcery.Media.AudioEncoder();
+        var androidAudioEndPoint = new Ringly.Samples.Maui.Platforms.Android.AndroidAudioEndPoint(androidAudioEncoder);
+        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSource>(androidAudioEndPoint);
+        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSink>(androidAudioEndPoint);
 #endif
 
         builder.Services.AddSingleton<ICallClient, SipSorceryCallClient>();

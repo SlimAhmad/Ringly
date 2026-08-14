@@ -10,7 +10,17 @@ public sealed class FileLoggerProvider : ILoggerProvider
     public FileLoggerProvider(string filePath)
     {
         this.filePath = filePath;
-        File.WriteAllText(this.filePath, $"=== log started {DateTimeOffset.UtcNow:O} ==={Environment.NewLine}");
+
+        try
+        {
+            byte[] bytes = System.Text.Encoding.UTF8.GetBytes(
+                $"=== log started {DateTimeOffset.UtcNow:O} ==={Environment.NewLine}");
+            using var stream = new FileStream(this.filePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+            stream.Write(bytes, 0, bytes.Length);
+        }
+        catch (IOException)
+        {
+        }
     }
 
     public ILogger CreateLogger(string categoryName) => new FileLogger(categoryName, this.filePath, this.writeLock);
@@ -34,9 +44,26 @@ public sealed class FileLoggerProvider : ILoggerProvider
                 line += $"{Environment.NewLine}{exception}";
             }
 
+            byte[] bytes = System.Text.Encoding.UTF8.GetBytes(line + Environment.NewLine);
+
             lock (writeLock)
             {
-                File.AppendAllText(filePath, line + Environment.NewLine);
+                // This log file is shared across separate OS processes (two instances of this
+                // sample app, both logging to the same path for easier side-by-side tracing).
+                // File.AppendAllText opens the file exclusively, so a write from the other
+                // process landing at the same moment throws a sharing-violation IOException —
+                // confirmed to crash the app outright, since logging must never be allowed to
+                // take down real call handling. FileShare.ReadWrite lets both processes' writes
+                // interleave instead of colliding, and any residual IO failure is swallowed here
+                // rather than propagated.
+                try
+                {
+                    using var stream = new FileStream(filePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+                    stream.Write(bytes, 0, bytes.Length);
+                }
+                catch (IOException)
+                {
+                }
             }
         }
     }
