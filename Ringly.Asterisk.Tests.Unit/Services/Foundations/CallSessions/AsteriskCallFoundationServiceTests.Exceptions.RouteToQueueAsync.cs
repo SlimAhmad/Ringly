@@ -32,7 +32,7 @@ public partial class AsteriskCallFoundationServiceTests
                 .ReturnsAsync(someHoldingBridge);
 
         this.asteriskBrokerMock.Setup(broker =>
-            broker.InsertChannelAsync(someCredentials.Extension))
+            broker.InsertChannelAsync($"PJSIP/{someCredentials.Extension}"))
                 .ThrowsAsync(httpResponseBadRequestException);
 
         // when
@@ -46,7 +46,7 @@ public partial class AsteriskCallFoundationServiceTests
         actualException.Should().BeEquivalentTo(expectedException);
 
         this.asteriskBrokerMock.Verify(broker =>
-            broker.InsertChannelAsync(someCredentials.Extension),
+            broker.InsertChannelAsync($"PJSIP/{someCredentials.Extension}"),
                 Times.Once);
 
         this.sipCredentialsStoreMock.Verify(store =>
@@ -93,7 +93,7 @@ public partial class AsteriskCallFoundationServiceTests
                 .ReturnsAsync(someHoldingBridge);
 
         this.asteriskBrokerMock.Setup(broker =>
-            broker.InsertChannelAsync(someCredentials.Extension))
+            broker.InsertChannelAsync($"PJSIP/{someCredentials.Extension}"))
                 .ThrowsAsync(dependencyException);
 
         // when
@@ -107,7 +107,7 @@ public partial class AsteriskCallFoundationServiceTests
         actualException.Should().BeEquivalentTo(expectedException);
 
         this.asteriskBrokerMock.Verify(broker =>
-            broker.InsertChannelAsync(someCredentials.Extension),
+            broker.InsertChannelAsync($"PJSIP/{someCredentials.Extension}"),
                 Times.Once);
 
         this.sipCredentialsStoreMock.Verify(store =>
@@ -154,7 +154,7 @@ public partial class AsteriskCallFoundationServiceTests
                 .ReturnsAsync(someHoldingBridge);
 
         this.asteriskBrokerMock.Setup(broker =>
-            broker.InsertChannelAsync(someCredentials.Extension))
+            broker.InsertChannelAsync($"PJSIP/{someCredentials.Extension}"))
                 .ThrowsAsync(dependencyException);
 
         // when
@@ -168,7 +168,7 @@ public partial class AsteriskCallFoundationServiceTests
         actualException.Should().BeEquivalentTo(expectedException);
 
         this.asteriskBrokerMock.Verify(broker =>
-            broker.InsertChannelAsync(someCredentials.Extension),
+            broker.InsertChannelAsync($"PJSIP/{someCredentials.Extension}"),
                 Times.Once);
 
         this.sipCredentialsStoreMock.Verify(store =>

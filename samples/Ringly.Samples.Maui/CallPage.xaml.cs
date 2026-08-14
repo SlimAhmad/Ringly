@@ -9,8 +9,12 @@ public partial class CallPage : ContentPage
     private readonly ICallClient callClient;
     private readonly ObservableCollection<string> eventLog = [];
     private IDisposable? eventSubscription;
+    private IDispatcherTimer? callTimer;
     private CallHandle? currentCallHandle;
     private CallHandle? incomingCallHandle;
+    private DateTimeOffset callAnsweredAt;
+    private bool isMuted;
+    private bool isSpeakerOn;
 
     public CallPage(ICallClient callClient)
     {
@@ -31,6 +35,7 @@ public partial class CallPage : ContentPage
     {
         base.OnDisappearing();
         this.eventSubscription?.Dispose();
+        this.StopCallTimer();
     }
 
     private void HandleCallEvent(CallClientEvent callEvent)
@@ -41,27 +46,32 @@ public partial class CallPage : ContentPage
         {
             case "IncomingCall":
                 this.incomingCallHandle = callEvent.Handle;
-                this.IncomingCallLabel.IsVisible = true;
-                this.IncomingCallButtons.IsVisible = true;
+                this.ShowIncoming(callEvent.RemoteExtension);
                 break;
 
             case "CallAnswered":
-                this.IncomingCallLabel.IsVisible = false;
-                this.IncomingCallButtons.IsVisible = false;
+                this.ShowActive();
                 break;
 
             case "CallHungup":
-            case "CallFailed":
-                this.IncomingCallLabel.IsVisible = false;
-                this.IncomingCallButtons.IsVisible = false;
                 this.currentCallHandle = null;
                 this.incomingCallHandle = null;
+                this.ShowSetup();
+                break;
+
+            case "CallFailed":
+                this.currentCallHandle = null;
+                this.incomingCallHandle = null;
+                this.ShowCallFailed();
                 break;
         }
     }
 
     private async void OnRegisterClicked(object? sender, EventArgs e)
     {
+        this.RegistrationStatusLabel.Text = "Registering...";
+        this.RegistrationStatusLabel.TextColor = Colors.Orange;
+
         try
         {
             await this.callClient.RegisterAsync(new SipCredentials
@@ -90,26 +100,55 @@ public partial class CallPage : ContentPage
             return;
         }
 
-        this.currentCallHandle = await this.callClient.PlaceCallAsync(targetExtension);
+        this.ShowDialing(targetExtension);
+
+        try
+        {
+            this.currentCallHandle = await this.callClient.PlaceCallAsync(targetExtension);
+        }
+        catch (Exception exception)
+        {
+            this.eventLog.Insert(0, $"{DateTimeOffset.Now:HH:mm:ss} Call failed: {exception.Message}");
+            this.ShowCallFailed();
+        }
     }
 
     private async void OnHangupClicked(object? sender, EventArgs e)
     {
-        if (this.currentCallHandle is not null)
+        CallHandle? handle = this.currentCallHandle ?? this.incomingCallHandle;
+
+        if (handle is not null)
         {
-            await this.callClient.HangupAsync(this.currentCallHandle);
-            this.currentCallHandle = null;
+            try
+            {
+                await this.callClient.HangupAsync(handle);
+            }
+            catch (Exception exception)
+            {
+                this.eventLog.Insert(0, $"{DateTimeOffset.Now:HH:mm:ss} Hangup failed: {exception.Message}");
+            }
         }
+
+        this.currentCallHandle = null;
+        this.incomingCallHandle = null;
+        this.ShowSetup();
     }
 
     private async void OnAnswerClicked(object? sender, EventArgs e)
     {
         if (this.incomingCallHandle is not null)
         {
-            await this.callClient.AnswerCallAsync(this.incomingCallHandle);
-            this.currentCallHandle = this.incomingCallHandle;
-            this.IncomingCallLabel.IsVisible = false;
-            this.IncomingCallButtons.IsVisible = false;
+            try
+            {
+                await this.callClient.AnswerCallAsync(this.incomingCallHandle);
+                this.currentCallHandle = this.incomingCallHandle;
+                this.ShowActive();
+            }
+            catch (Exception exception)
+            {
+                this.eventLog.Insert(0, $"{DateTimeOffset.Now:HH:mm:ss} Answer failed: {exception.Message}");
+                this.ShowCallFailed();
+            }
         }
     }
 
@@ -117,11 +156,144 @@ public partial class CallPage : ContentPage
     {
         if (this.incomingCallHandle is not null)
         {
-            await this.callClient.HangupAsync(this.incomingCallHandle);
+            try
+            {
+                await this.callClient.HangupAsync(this.incomingCallHandle);
+            }
+            catch (Exception exception)
+            {
+                this.eventLog.Insert(0, $"{DateTimeOffset.Now:HH:mm:ss} Decline failed: {exception.Message}");
+            }
+
             this.incomingCallHandle = null;
         }
 
-        this.IncomingCallLabel.IsVisible = false;
+        this.ShowSetup();
+    }
+
+    private async void OnMuteClicked(object? sender, EventArgs e)
+    {
+        try
+        {
+            if (this.isMuted)
+            {
+                await this.callClient.UnmuteAsync();
+            }
+            else
+            {
+                await this.callClient.MuteAsync();
+            }
+
+            this.isMuted = !this.isMuted;
+            this.MuteButton.Text = this.isMuted ? "🔇" : "🎙";
+            this.MuteButton.BackgroundColor = this.isMuted ? Color.FromArgb("#5B4CE0") : Color.FromArgb("#2A2E3F");
+        }
+        catch (Exception exception)
+        {
+            this.eventLog.Insert(0, $"{DateTimeOffset.Now:HH:mm:ss} Mute failed: {exception.Message}");
+        }
+    }
+
+    private void OnSpeakerClicked(object? sender, EventArgs e)
+    {
+        // UI-only toggle — SIPSorceryMedia.Windows's WindowsAudioEndPoint has no
+        // speaker/earpiece routing concept (that's a mobile-specific dichotomy), and there's
+        // no audio device to route on Android yet either (see MauiProgram.cs). Flips the
+        // button state so the screen matches the reference design; doesn't change real
+        // audio output.
+        this.isSpeakerOn = !this.isSpeakerOn;
+        this.SpeakerButton.BackgroundColor = this.isSpeakerOn ? Color.FromArgb("#5B4CE0") : Color.FromArgb("#2A2E3F");
+    }
+
+    private void ShowSetup()
+    {
+        this.StopCallTimer();
+        this.SetupView.IsVisible = true;
+        this.InCallView.IsVisible = false;
+        this.CallFailedLabel.IsVisible = false;
+        this.isMuted = false;
+        this.isSpeakerOn = false;
+    }
+
+    private void ShowDialing(string targetExtension)
+    {
+        this.SetupView.IsVisible = false;
+        this.InCallView.IsVisible = true;
+        this.CallFailedLabel.IsVisible = false;
+
+        this.CallAvatarLabel.Text = AvatarInitials(targetExtension);
+        this.CallStateLabel.Text = "Calling";
+        this.CallTargetLabel.Text = targetExtension;
+        this.CallTimerLabel.IsVisible = false;
+
+        this.DialingButtons.IsVisible = true;
+        this.ActiveCallButtons.IsVisible = false;
         this.IncomingCallButtons.IsVisible = false;
     }
+
+    private void ShowIncoming(string callerExtension)
+    {
+        this.SetupView.IsVisible = false;
+        this.InCallView.IsVisible = true;
+        this.CallFailedLabel.IsVisible = false;
+
+        this.CallAvatarLabel.Text = AvatarInitials(callerExtension);
+        this.CallStateLabel.Text = "Incoming call";
+        this.CallTargetLabel.Text = string.IsNullOrEmpty(callerExtension) ? "Unknown" : callerExtension;
+        this.CallTimerLabel.IsVisible = false;
+
+        this.DialingButtons.IsVisible = false;
+        this.ActiveCallButtons.IsVisible = false;
+        this.IncomingCallButtons.IsVisible = true;
+    }
+
+    private void ShowActive()
+    {
+        this.SetupView.IsVisible = false;
+        this.InCallView.IsVisible = true;
+        this.CallFailedLabel.IsVisible = false;
+
+        this.CallStateLabel.Text = "In call with";
+        this.CallTimerLabel.IsVisible = true;
+
+        this.DialingButtons.IsVisible = false;
+        this.IncomingCallButtons.IsVisible = false;
+        this.ActiveCallButtons.IsVisible = true;
+
+        this.StartCallTimer();
+    }
+
+    private void ShowCallFailed()
+    {
+        this.StopCallTimer();
+        this.SetupView.IsVisible = true;
+        this.InCallView.IsVisible = false;
+        this.CallFailedLabel.Text = "Call ended unexpectedly — see event log below.";
+        this.CallFailedLabel.IsVisible = true;
+    }
+
+    private void StartCallTimer()
+    {
+        this.callAnsweredAt = DateTimeOffset.Now;
+        this.CallTimerLabel.Text = "00:00";
+
+        this.callTimer = this.Dispatcher.CreateTimer();
+        this.callTimer.Interval = TimeSpan.FromSeconds(1);
+        this.callTimer.Tick += (_, _) =>
+        {
+            TimeSpan elapsed = DateTimeOffset.Now - this.callAnsweredAt;
+            this.CallTimerLabel.Text = elapsed.ToString(elapsed.TotalHours >= 1 ? @"hh\:mm\:ss" : @"mm\:ss");
+        };
+
+        this.callTimer.Start();
+    }
+
+    private void StopCallTimer()
+    {
+        this.callTimer?.Stop();
+        this.callTimer = null;
+    }
+
+    private static string AvatarInitials(string extension) =>
+        string.IsNullOrEmpty(extension) ? "?" : extension[..Math.Min(2, extension.Length)];
 }

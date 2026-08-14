@@ -33,6 +33,10 @@ builder.Services.AddScoped<ICallProvisioningService, CallProvisioningService>();
 builder.Services.AddScoped<ICallProvider, AsteriskCallFoundationService>();
 builder.Services.AddScoped<ICallCenterProvider, AsteriskCallCenterFoundationService>();
 
+// Bridges calls a client dials directly (not just server-originated ones via /calls) — see
+// RideHailingCallRouter's own comment for why this is needed.
+builder.Services.AddHostedService<RideHailingCallRouter>();
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())

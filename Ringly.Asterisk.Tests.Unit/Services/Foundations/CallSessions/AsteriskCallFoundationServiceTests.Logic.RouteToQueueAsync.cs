@@ -1,3 +1,4 @@
+using System.Reactive.Linq;
 using FluentAssertions;
 using Moq;
 using Ringly.Abstractions.Models;
@@ -33,8 +34,12 @@ public partial class AsteriskCallFoundationServiceTests
                 .ReturnsAsync(someHoldingBridge);
 
         this.asteriskBrokerMock.Setup(broker =>
-            broker.InsertChannelAsync(someCredentials.Extension))
+            broker.InsertChannelAsync($"PJSIP/{someCredentials.Extension}"))
                 .ReturnsAsync(someChannel);
+
+        this.asteriskBrokerMock.Setup(broker =>
+            broker.StreamStasisStartEvents())
+                .Returns(new[] { new StasisStartEvent { ChannelId = someChannel.ChannelId } }.ToObservable());
 
         // when
         CallSession actualCallSession =
@@ -55,11 +60,15 @@ public partial class AsteriskCallFoundationServiceTests
                 Times.Once);
 
         this.asteriskBrokerMock.Verify(broker =>
-            broker.InsertChannelAsync(someCredentials.Extension),
+            broker.InsertChannelAsync($"PJSIP/{someCredentials.Extension}"),
                 Times.Once);
 
         this.asteriskBrokerMock.Verify(broker =>
             broker.AddChannelToBridgeAsync(someHoldingBridge.BridgeId, someChannel.ChannelId),
+                Times.Once);
+
+        this.asteriskBrokerMock.Verify(broker =>
+            broker.StreamStasisStartEvents(),
                 Times.Once);
 
         this.asteriskBrokerMock.VerifyNoOtherCalls();

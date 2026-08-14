@@ -1,3 +1,4 @@
+using System.Reactive.Linq;
 using FluentAssertions;
 using Moq;
 using Ringly.Abstractions.Models;
@@ -22,12 +23,23 @@ public partial class AsteriskCallFoundationServiceTests
                 .ReturnsAsync(returnedBridge);
 
         this.asteriskBrokerMock.Setup(broker =>
-            broker.InsertChannelAsync(partyA.SipExtension))
+            broker.InsertChannelAsync($"PJSIP/{partyA.SipExtension}"))
                 .ReturnsAsync(returnedChannelA);
 
         this.asteriskBrokerMock.Setup(broker =>
-            broker.InsertChannelAsync(partyB.SipExtension))
+            broker.InsertChannelAsync($"PJSIP/{partyB.SipExtension}"))
                 .ReturnsAsync(returnedChannelB);
+
+        // A cold observable replaying both events to every independent subscription — the
+        // service subscribes once per channel it's waiting on, in sequence, each filtering out
+        // the other channel's event.
+        this.asteriskBrokerMock.Setup(broker =>
+            broker.StreamStasisStartEvents())
+                .Returns(new[]
+                {
+                    new StasisStartEvent { ChannelId = returnedChannelA.ChannelId },
+                    new StasisStartEvent { ChannelId = returnedChannelB.ChannelId }
+                }.ToObservable());
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.AddChannelToBridgeAsync(returnedBridge.Id, returnedChannelA.ChannelId))
@@ -50,11 +62,11 @@ public partial class AsteriskCallFoundationServiceTests
                 Times.Once);
 
         this.asteriskBrokerMock.Verify(broker =>
-            broker.InsertChannelAsync(partyA.SipExtension),
+            broker.InsertChannelAsync($"PJSIP/{partyA.SipExtension}"),
                 Times.Once);
 
         this.asteriskBrokerMock.Verify(broker =>
-            broker.InsertChannelAsync(partyB.SipExtension),
+            broker.InsertChannelAsync($"PJSIP/{partyB.SipExtension}"),
                 Times.Once);
 
         this.asteriskBrokerMock.Verify(broker =>
@@ -64,6 +76,10 @@ public partial class AsteriskCallFoundationServiceTests
         this.asteriskBrokerMock.Verify(broker =>
             broker.AddChannelToBridgeAsync(returnedBridge.Id, returnedChannelB.ChannelId),
                 Times.Once);
+
+        this.asteriskBrokerMock.Verify(broker =>
+            broker.StreamStasisStartEvents(),
+                Times.Exactly(2));
 
         this.asteriskBrokerMock.VerifyNoOtherCalls();
         this.loggingBrokerMock.VerifyNoOtherCalls();

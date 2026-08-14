@@ -61,6 +61,13 @@
 		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
 	</ItemGroup>
 
+	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
+		<!-- Real microphone/speaker access for the Windows target — no equivalent official
+		     package exists for Android (SIPSorceryMedia.Android doesn't exist); that side stays
+		     signaling-only for now, tracked as follow-up work. -->
+		<PackageReference Include="SIPSorceryMedia.Windows" Version="10.0.15" />
+	</ItemGroup>
+
 	<ItemGroup>
 		<ProjectReference Include="..\..\Ringly.Client.Abstractions\Ringly.Client.Abstractions.csproj" />
 		<ProjectReference Include="..\..\Ringly.Client.SipSorcery\Ringly.Client.SipSorcery.csproj" />
