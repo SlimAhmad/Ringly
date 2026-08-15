@@ -22,9 +22,10 @@ public sealed class AndroidAudioEndPoint : IAudioSource, IAudioSink, IDisposable
     // straight to AudioTrack on arrival — no smoothing at all — produces audible choppiness the
     // instant packets arrive late or out of order, since AudioTrack's own internal buffer only
     // absorbs timing jitter, not genuinely missing frames.
-    private const int PrebufferFrameCount = 3; // ~60ms of lookahead before playback starts, to absorb the first burst of jitter
+    private const int PrebufferFrameCount = 5; // ~100ms of lookahead before playback starts, to absorb the first burst of jitter
     private const int MaxJitterBufferFrames = 10; // ~200ms cap — beyond this we're falling behind real time, drop oldest to stop latency creeping up call after call
     private const int MaxConcealedFramesInARow = 5; // ~100ms of repeat-last-frame concealment for a real gap before giving up and letting it go quiet, so true silence doesn't get masked as looping noise forever
+    private static readonly float[] ConcealmentFadeFactors = [0.65f, 0.4f, 0.22f, 0.1f, 0.04f]; // indexed by concealedFramesInARow — fades toward silence instead of repeating at a flat level, so a real gap reads as a soft dropout rather than a buzzy stutter
 
     // NOT static readonly: this class is constructed in MauiProgram.cs before builder.Build()
     // runs, which is before SIPSorcery.LogFactory.Set() wires up the real ILoggerFactory — a
@@ -382,8 +383,14 @@ public sealed class AndroidAudioEndPoint : IAudioSource, IAudioSink, IDisposable
             }
             else if (this.lastPlayedFrame is not null && this.concealedFramesInARow < MaxConcealedFramesInARow)
             {
+                // Repeating the exact same waveform verbatim creates an audible click/buzz at the
+                // seam each time it happens — confirmed live that with frequent-but-small losses
+                // (a few frames almost every 2s window on a real network), that added up to
+                // "keeps breaking, can't make out what's coming back" even though the raw loss
+                // rate was modest. Fading each successive concealed frame toward silence instead
+                // of repeating at a constant level reads as a soft dropout rather than a stutter.
+                this.WriteFrameToAudioTrack(AttenuateFrame(this.lastPlayedFrame, ConcealmentFadeFactors[this.concealedFramesInARow]));
                 this.concealedFramesInARow++;
-                this.WriteFrameToAudioTrack(AttenuateFrame(this.lastPlayedFrame, 0.6f));
 
                 this.concealedFramesSinceLog++;
                 if (DateTime.UtcNow - this.lastConcealmentLogAt > TimeSpan.FromSeconds(2))
