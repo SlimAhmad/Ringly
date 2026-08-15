@@ -333,21 +333,45 @@ public sealed class CustomWindowsAudioEndPoint : IAudioSource, IAudioSink, IDisp
         int frameBytes = SampleRate * BitsPerSample / 8 * FrameDurationMs / 1000;
         var buffer = new byte[frameBytes];
 
+        // Confirmed live that gating purely on "is enough native audio buffered yet" — with no
+        // pacing of the READS themselves — lets this loop drain any surplus sitting in the
+        // native buffer back-to-back with zero delay between reads, the instant the gate is
+        // satisfied. Requiring a large threshold (the previous, dimensionally-wrong 120ms) masked
+        // this by accident, since accumulating 120ms of surplus itself takes ~120ms of wall
+        // time — but fixing that threshold to the dimensionally-correct 20ms removed that
+        // accidental throttling and exposed the real bug: capturing/encoding/sending audio at
+        // ~17x real-time speed (1700-1800 "20ms frames" logged per 2 real seconds instead of the
+        // correct ~100), which is what turned into the reported "static" — packets arriving at
+        // the receiver far faster than real-time, well beyond what the jitter buffer's ~200ms cap
+        // can absorb. A steady clocked cadence (mirroring PlaybackFeedLoop's approach on the
+        // Android side) is the actual fix: read at most one frame per real 20ms tick, regardless
+        // of how much surplus is sitting in the buffer.
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        long nextFrameDueAtMs = 0;
+
         while (this.isCapturing && this.captureResampler is not null && this.captureNativeBuffer is not null)
         {
-            // Only pull once the native buffer holds enough real audio to produce a full
-            // resampled frame — reading through MediaFoundationResampler when the source is
-            // short pads with silence rather than blocking, which would otherwise show up as
-            // spurious near-zero frames at startup.
-            double neededNativeMs = FrameDurationMs * ((double)this.waveIn!.WaveFormat.SampleRate / SampleRate);
-
-            if (this.captureNativeBuffer.BufferedDuration.TotalMilliseconds < neededNativeMs)
+            if (this.captureNativeBuffer.BufferedDuration.TotalMilliseconds < FrameDurationMs)
             {
                 Thread.Sleep(5);
                 continue;
             }
 
             int bytesRead = this.captureResampler.Read(buffer, 0, buffer.Length);
+
+            nextFrameDueAtMs += FrameDurationMs;
+            int sleepMs = (int)(nextFrameDueAtMs - stopwatch.ElapsedMilliseconds);
+
+            if (sleepMs > 0)
+            {
+                Thread.Sleep(sleepMs);
+            }
+            else
+            {
+                // Fell behind real time — resync instead of racing to catch up, which is exactly
+                // the burst behavior this pacing exists to prevent.
+                nextFrameDueAtMs = stopwatch.ElapsedMilliseconds;
+            }
 
             if (bytesRead <= 0 || this.isSourcePaused || this.sourceFormatManager.SelectedFormat.IsEmpty())
             {
