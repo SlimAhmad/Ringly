@@ -30,26 +30,32 @@ public class SipSorceryCallClient : ICallClient, IDisposable
     private readonly RTCConfiguration rtcConfiguration;
     private readonly IAudioSource? audioSource;
     private readonly IAudioSink? audioSink;
+    private readonly IVideoSource? videoSource;
+    private readonly IVideoSink? videoSink;
     private SipCredentials? registeredCredentials;
     private SIPRegistrationUserAgent? registrationAgent;
 
-    // audioSource/audioSink are optional and platform-specific — this library has no built-in
-    // microphone/speaker access of its own (SIPSorcery's own platform audio packages, e.g.
-    // SIPSorceryMedia.Windows, need a platform-specific TFM this cross-platform project doesn't
-    // have). Without them, calls still negotiate real SDP and connect (proven working), but no
-    // actual audio flows — Asterisk's RTP-timeout hangs the call up after ~30s of silence
-    // either way. Callers that want real two-way audio construct a platform audio endpoint
-    // (e.g. SIPSorceryMedia.Windows's WindowsAudioEndPoint implements both interfaces) and
-    // register it for DI; Microsoft.Extensions.DependencyInjection resolves these to null via
-    // the default parameter when nothing's registered, so this stays a no-op on platforms
-    // (e.g. Android) that don't provide one.
+    // audioSource/audioSink (and videoSource/videoSink, same idiom) are optional and
+    // platform-specific — this library has no built-in microphone/speaker/camera access of its
+    // own (SIPSorcery's own platform audio packages, e.g. SIPSorceryMedia.Windows, need a
+    // platform-specific TFM this cross-platform project doesn't have). Without them, calls still
+    // negotiate real SDP and connect (proven working), but no actual audio/video flows —
+    // Asterisk's RTP-timeout hangs the call up after ~30s of silence either way. Callers that
+    // want real media construct platform endpoints (e.g. SIPSorceryMedia.Windows's
+    // WindowsAudioEndPoint implements both audio interfaces) and register them for DI;
+    // Microsoft.Extensions.DependencyInjection resolves these to null via the default parameter
+    // when nothing's registered, so this stays a no-op on platforms that don't provide one.
     public SipSorceryCallClient(
         IOptions<SipSorceryCallOptions> options,
         IAudioSource? audioSource = null,
-        IAudioSink? audioSink = null)
+        IAudioSink? audioSink = null,
+        IVideoSource? videoSource = null,
+        IVideoSink? videoSink = null)
     {
         this.audioSource = audioSource;
         this.audioSink = audioSink;
+        this.videoSource = videoSource;
+        this.videoSink = videoSink;
         this.options = options.Value;
         this.events = new Subject<CallClientEvent>();
         this.pendingIncomingCalls = [];
@@ -271,6 +277,22 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         }
     }
 
+    public async ValueTask MuteVideoAsync()
+    {
+        if (this.videoSource is not null)
+        {
+            await this.videoSource.PauseVideo();
+        }
+    }
+
+    public async ValueTask UnmuteVideoAsync()
+    {
+        if (this.videoSource is not null)
+        {
+            await this.videoSource.ResumeVideo();
+        }
+    }
+
     public IObservable<CallClientEvent> StreamEvents() => this.events;
 
     public void Dispose()
@@ -311,6 +333,19 @@ public class SipSorceryCallClient : ICallClient, IDisposable
 
         var audioTrack = new MediaStreamTrack(formats, MediaStreamStatusEnum.SendRecv);
         mediaSession.addTrack(audioTrack);
+
+        // Unlike audio, video is only advertised when a real source or sink is actually
+        // registered — there's no "signaling-only" fallback video format the way PCMU serves for
+        // audio, and forcing a video "m=" line onto every audio-only call would negotiate a
+        // capability nothing behind it can use.
+        if (this.videoSource is not null || this.videoSink is not null)
+        {
+            List<VideoFormat> videoFormats = this.videoSource?.GetVideoSourceFormats()
+                ?? this.videoSink!.GetVideoSinkFormats();
+
+            var videoTrack = new MediaStreamTrack(videoFormats, MediaStreamStatusEnum.SendRecv);
+            mediaSession.addTrack(videoTrack);
+        }
 
         // Fallback so the UI always learns a call ended, even when the far end's BYE never
         // arrives — confirmed on a lossy network path that the outgoing BYE itself can time out
@@ -477,6 +512,82 @@ public class SipSorceryCallClient : ICallClient, IDisposable
                 catch (Exception exception)
                 {
                     Logger.LogError(exception, "Failed handling audio sink state change to {State}.", state);
+                }
+            };
+        }
+
+        if (this.videoSource is not null)
+        {
+            EncodedSampleDelegate sendVideoHandler = (durationRtpUnits, sample) =>
+                mediaSession.SendVideo(durationRtpUnits, sample);
+
+            this.videoSource.OnVideoSourceEncodedSample += sendVideoHandler;
+
+            this.videoSource.OnVideoSourceError += errorMessage =>
+                Logger.LogError("Video source error: {ErrorMessage}", errorMessage);
+
+            mediaSession.OnVideoFormatsNegotiated += negotiatedFormats =>
+                this.videoSource.SetVideoSourceFormat(negotiatedFormats.First());
+
+            mediaSession.onconnectionstatechange += async state =>
+            {
+                try
+                {
+                    if (state == RTCPeerConnectionState.connected)
+                    {
+                        await this.videoSource.StartVideo();
+                        Logger.LogInformation("Video source started.");
+                    }
+                    else if (state is RTCPeerConnectionState.closed
+                        or RTCPeerConnectionState.failed
+                        or RTCPeerConnectionState.disconnected)
+                    {
+                        // Same reasoning as audioSource's equivalent unsubscribe above — videoSource
+                        // is a shared singleton reused across calls (the platform camera is only
+                        // ever created once), so leaving this handler attached after the session
+                        // closes would accumulate one stale handler per past call.
+                        this.videoSource.OnVideoSourceEncodedSample -= sendVideoHandler;
+                        await this.videoSource.CloseVideo();
+                    }
+                }
+                catch (Exception exception)
+                {
+                    Logger.LogError(exception, "Failed handling video source state change to {State}.", state);
+                }
+            };
+        }
+
+        if (this.videoSink is not null)
+        {
+            mediaSession.OnVideoFormatsNegotiated += negotiatedFormats =>
+                this.videoSink.SetVideoSinkFormat(negotiatedFormats.First());
+
+            // Unlike audio (which goes through OnRtpPacketReceived + the obsolete GotAudioRtp
+            // overload, since that's the only path AndroidAudioEndPoint/CustomWindowsAudioEndPoint
+            // were written against), RTCPeerConnection exposes a higher-level OnVideoFrameReceived
+            // event whose signature already matches IVideoSink.GotVideoFrame exactly — no manual
+            // RTP-header unpacking needed here.
+            mediaSession.OnVideoFrameReceived += this.videoSink.GotVideoFrame;
+
+            mediaSession.onconnectionstatechange += async state =>
+            {
+                try
+                {
+                    if (state == RTCPeerConnectionState.connected)
+                    {
+                        await this.videoSink.StartVideoSink();
+                        Logger.LogInformation("Video sink started.");
+                    }
+                    else if (state is RTCPeerConnectionState.closed
+                        or RTCPeerConnectionState.failed
+                        or RTCPeerConnectionState.disconnected)
+                    {
+                        await this.videoSink.CloseVideoSink();
+                    }
+                }
+                catch (Exception exception)
+                {
+                    Logger.LogError(exception, "Failed handling video sink state change to {State}.", state);
                 }
             };
         }
