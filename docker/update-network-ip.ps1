@@ -4,18 +4,23 @@ Updates the LAN IP used by coturn and the MAUI sample after switching networks (
 hotspot, etc.), and restarts the coturn container so it picks up the change immediately.
 
 .DESCRIPTION
-Two files need to agree on the host machine's current LAN IP, and a stale value in either one
-causes a *silent* mid-call failure (ICE/TURN relay candidates unreachable), not a loud
-connection-time error - see docker/coturn/turnserver.conf's external-ip comment for the full
-story:
+Three files need to agree on the host machine's current LAN IP, and a stale value in any one of
+them causes a *silent* mid-call failure (ICE/TURN candidates pointing at an address unreachable
+from a real device), not a loud connection-time error - see docker/coturn/turnserver.conf's
+external-ip comment and docker/asterisk/config/pjsip.conf's external_media_address comment for
+the full story:
   - docker/coturn/turnserver.conf's external-ip (what coturn advertises as the relay candidate
     address)
+  - docker/asterisk/config/pjsip.conf's external_media_address/external_signaling_address (what
+    Asterisk itself advertises as ITS candidate address - Asterisk terminates/relays media per-leg
+    for webrtc=yes endpoints, so its own container-internal IP being unreachable from outside
+    Docker is just as real a failure mode as coturn's)
   - samples/Ringly.Samples.Maui/MauiProgram.cs's CurrentLanHostAddress constant (what the MAUI
     app on a real Android device uses to reach Asterisk/coturn)
 
-This script detects the current IPv4 address on the given network adapter, updates both files,
-and restarts the coturn container - replacing the previous three-step manual process (find IP,
-edit turnserver.conf, edit MauiProgram.cs, restart coturn) with one command.
+This script detects the current IPv4 address on the given network adapter, updates all three
+files, and rebuilds+recreates the coturn and asterisk containers - replacing the previous
+multi-step manual process (find IP, edit files, rebuild containers) with one command.
 
 .PARAMETER InterfaceAlias
 Which network adapter to read the IP from. Defaults to "Wi-Fi" - pass a different value (e.g.
@@ -36,6 +41,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $turnConf = Join-Path $PSScriptRoot "coturn\turnserver.conf"
+$pjsipConf = Join-Path $PSScriptRoot "asterisk\config\pjsip.conf"
 $mauiProgram = Join-Path $repoRoot "samples\Ringly.Samples.Maui\MauiProgram.cs"
 $composeFile = Join-Path $PSScriptRoot "docker-compose.yml"
 
@@ -58,6 +64,19 @@ if ($updatedTurnConf -eq $turnConfContent) {
 Set-Content -Path $turnConf -Value $updatedTurnConf -NoNewline
 Write-Host "Updated $turnConf"
 
+# pjsip.conf: same "ringly:lan-ip" marker convention as MauiProgram.cs below, but there are two
+# values on two separate lines right after the marker (external_media_address and
+# external_signaling_address), both needing the same new IP.
+$pjsipContent = Get-Content $pjsipConf -Raw
+$pjsipPattern = '(; ringly:lan-ip\r?\n\[transport-udp\]\r?\ntype = transport\r?\nprotocol = udp\r?\nbind = 0\.0\.0\.0\r?\nexternal_media_address = )[^\r\n]*(\r?\nexternal_signaling_address = )[^\r\n]*'
+$pjsipEvaluator = [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $m.Groups[1].Value + $ip + $m.Groups[2].Value + $ip }
+$updatedPjsipContent = [System.Text.RegularExpressions.Regex]::Replace($pjsipContent, $pjsipPattern, $pjsipEvaluator)
+if ($updatedPjsipContent -eq $pjsipContent -and $pjsipContent -notmatch [regex]::Escape($ip)) {
+    Write-Warning "ringly:lan-ip marker not found in $pjsipConf - check the file wasn't restructured."
+}
+Set-Content -Path $pjsipConf -Value $updatedPjsipContent -NoNewline
+Write-Host "Updated $pjsipConf"
+
 # MauiProgram.cs: replace only the string literal on the line right after the "ringly:lan-ip"
 # marker comment, so this keeps working even if the constant gets renamed again later.
 $mauiContent = Get-Content $mauiProgram -Raw
@@ -70,16 +89,17 @@ if ($updatedMauiContent -eq $mauiContent -and $mauiContent -notmatch [regex]::Es
 Set-Content -Path $mauiProgram -Value $updatedMauiContent -NoNewline
 Write-Host "Updated $mauiProgram"
 
-# NOT "restart" - coturn/Dockerfile COPYs turnserver.conf into the image at build time rather
-# than bind-mounting it, so a plain restart brings the container back up on the OLD image with
-# the OLD baked-in external-ip. Confirmed live: every previous "restart coturn" in this script
+# NOT "restart" for either container - both coturn/Dockerfile and asterisk/Dockerfile COPY their
+# config into the image at build time rather than bind-mounting it, so a plain restart brings the
+# container back up on the OLD image with the OLD baked-in values. Confirmed live (twice - once
+# for coturn, then again for Asterisk's own pjsip.conf): every previous "restart" in this script
 # and by hand appeared to succeed (clean startup logs) while the running container silently kept
-# serving a stale external-ip from a much earlier build - every call needing the TURN relay path
-# was routing to an unreachable address the whole time, with no error at connection time, only
-# broken/silent audio and choppy video partway into calls. "up -d --build" rebuilds the image
-# (fast - Docker layer caching skips the unchanged apk/openssl step) and recreates the container.
-Write-Host "Rebuilding and recreating coturn (a plain restart would NOT pick up the new IP - see comment above)..."
-docker compose -f $composeFile up -d --build coturn
+# serving stale config from a much earlier build - calls were routing media to an unreachable
+# address the whole time, with no error at connection time, only broken/silent audio and choppy
+# video partway into calls. "up -d --build" rebuilds the image (fast - Docker layer caching skips
+# the unchanged steps) and recreates the container.
+Write-Host "Rebuilding and recreating coturn and asterisk (a plain restart would NOT pick up the new IP - see comment above)..."
+docker compose -f $composeFile up -d --build coturn asterisk
 
 Write-Host ""
 Write-Host "Done. Rebuild/redeploy the MAUI app (Windows + Android) to pick up the new host address."
