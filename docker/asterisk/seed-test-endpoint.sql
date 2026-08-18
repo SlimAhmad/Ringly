@@ -30,6 +30,10 @@ VALUES
     ('1004', 'userpass', '1004', 'ringly-dev-1004')
 ON CONFLICT (id) DO NOTHING;
 
+-- allow includes vp8 alongside the audio codecs — confirmed live that without it, Asterisk's
+-- own B2BUA rewrites the video m-line to "m=video 0" (rejected) on the answer it relays back
+-- to the caller regardless of what the actual callee negotiated, which SIPSorcery's client
+-- library treats as a hard call failure (VideoIncompatible), not just a missing video track.
 -- rewrite_contact is essential here: Asterisk runs inside the Docker container's own
 -- network namespace, so a client's self-reported Contact header ("127.0.0.1:PORT",
 -- accurate from the client's own point of view) means the CONTAINER's loopback to
@@ -45,14 +49,14 @@ INSERT INTO ps_endpoints (
     set_var
 )
 VALUES
-    ('1000', 'ride_hailing', 'all', 'opus,ulaw', '1000', '1000', 'yes', 'yes',
+    ('1000', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1000', '1000', 'yes', 'yes',
      'PJSIP_TRANSFER_HANDLING()=ari-only'),
-    ('1001', 'ride_hailing', 'all', 'opus,ulaw', '1001', '1001', 'yes', 'yes',
+    ('1001', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1001', '1001', 'yes', 'yes',
      'PJSIP_TRANSFER_HANDLING()=ari-only'),
-    ('1002', 'ride_hailing', 'all', 'opus,ulaw', '1002', '1002', 'yes', 'yes',
+    ('1002', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1002', '1002', 'yes', 'yes',
      'PJSIP_TRANSFER_HANDLING()=ari-only'),
-    ('1003', 'ride_hailing', 'all', 'opus,ulaw', '1003', '1003', 'yes', 'yes',
+    ('1003', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1003', '1003', 'yes', 'yes',
      'PJSIP_TRANSFER_HANDLING()=ari-only'),
-    ('1004', 'ride_hailing', 'all', 'opus,ulaw', '1004', '1004', 'yes', 'yes',
+    ('1004', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1004', '1004', 'yes', 'yes',
      'PJSIP_TRANSFER_HANDLING()=ari-only')
 ON CONFLICT (id) DO NOTHING;

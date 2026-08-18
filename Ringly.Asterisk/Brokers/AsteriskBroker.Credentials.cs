@@ -69,7 +69,16 @@ public partial class AsteriskBroker
         command.Parameters.AddWithValue("id", config.Extension);
         command.Parameters.AddWithValue("context", this.asteriskOptions.DialplanContext);
         command.Parameters.AddWithValue("disallow", "all");
-        command.Parameters.AddWithValue("allow", "opus,ulaw");
+
+        // vp8 added alongside the audio codecs — confirmed live (via `pjsip set logger on` and a
+        // real two-device Windows<->Android video call) that without it here, Asterisk's own
+        // B2BUA rewrites the video m-line to "m=video 0" (rejected) on every answer it relays
+        // back to the caller, even when the actual callee negotiated VP8 successfully end to end.
+        // SIPSorcery's SetRemoteDescription then treats that as VideoIncompatible and hangs up
+        // the entire call outright (not just the video track) — this is what was producing the
+        // "call disconnects the instant the other side answers" symptom on both platforms, not a
+        // client-side bug in either CustomWindowsVideoEndPoint or AndroidVideoEndPoint.
+        command.Parameters.AddWithValue("allow", "opus,ulaw,vp8");
         command.Parameters.AddWithValue("auth", config.Extension);
         command.Parameters.AddWithValue("aors", config.Extension);
         command.Parameters.AddWithValue("webrtc", this.asteriskOptions.UseWebRtcTransport ? "yes" : "no");
