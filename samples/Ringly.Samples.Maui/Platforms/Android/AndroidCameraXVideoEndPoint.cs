@@ -195,6 +195,20 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
     private sealed class NativeFrameAnalyzer(AndroidCameraXVideoEndPoint owner) : Java.Lang.Object, ImageAnalysis.IAnalyzer
     {
         public void Analyze(IImageProxy image) => owner.OnFrameAnalyzed(image);
+
+        // ImageAnalysis.Analyzer's other members have default implementations on the Java side,
+        // but confirmed live that CameraX's JNI dispatch still throws AbstractMethodError calling
+        // them if this binding doesn't implement them explicitly — every single BindToLifecycle
+        // call failed with exactly that ("abstract method ... getDefaultTargetResolution() on
+        // receiver ...NativeFrameAnalyzer"), which was silently retried on every reconnection
+        // attempt and is the real explanation for the choppiness reported while this bug was live.
+        public global::Android.Util.Size? DefaultTargetResolution => null;
+
+        public int TargetCoordinateSystem => 0; // COORDINATE_SYSTEM_ORIGINAL — matches the Java default
+
+        public void UpdateTransform(global::Android.Graphics.Matrix? matrix)
+        {
+        }
     }
 
     private void OnFrameAnalyzed(IImageProxy image)
