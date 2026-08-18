@@ -33,8 +33,15 @@
                 <Label Text="2. Place a call" FontAttributes="Bold" TextColor="White" />
                 <Entry x:Name="TargetExtensionEntry" Placeholder="Extension to call (e.g. 1001)"
                        TextColor="White" PlaceholderColor="#6B7086" />
-                <Button Text="Call" Clicked="OnCallClicked"
-                        BackgroundColor="#5B4CE0" TextColor="White" CornerRadius="24" />
+                <!-- Two separate buttons, not one "Call" + a video toggle — lets a real
+                     side-by-side test of "does audio alone behave differently from audio+video
+                     sharing the same call" without any extra taps once dialing starts. -->
+                <HorizontalStackLayout Spacing="12">
+                    <Button Text="Audio Call" Clicked="OnAudioCallClicked" HorizontalOptions="FillAndExpand"
+                            BackgroundColor="#5B4CE0" TextColor="White" CornerRadius="24" />
+                    <Button Text="Video Call" Clicked="OnVideoCallClicked" HorizontalOptions="FillAndExpand"
+                            BackgroundColor="#5B4CE0" TextColor="White" CornerRadius="24" />
+                </HorizontalStackLayout>
 
                 <BoxView HeightRequest="1" Color="#2A2E3F" />
 

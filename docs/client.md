@@ -9,7 +9,7 @@ independent of `Ringly.Abstractions` — different concerns, different lifecycle
 public partial interface ICallClient
 {
     ValueTask RegisterAsync(SipCredentials credentials);
-    ValueTask<CallHandle> PlaceCallAsync(string targetExtension);
+    ValueTask<CallHandle> PlaceCallAsync(string targetExtension, bool includeVideo = true);
     ValueTask AnswerCallAsync(CallHandle handle);
     ValueTask HangupAsync(CallHandle handle);
     IObservable<CallClientEvent> StreamEvents();

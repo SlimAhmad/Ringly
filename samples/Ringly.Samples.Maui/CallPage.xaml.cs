@@ -229,7 +229,13 @@ public partial class CallPage : ContentPage
         }
     }
 
-    private async void OnCallClicked(object? sender, EventArgs e)
+    private async void OnAudioCallClicked(object? sender, EventArgs e) =>
+        await this.PlaceCallAsync(includeVideo: false);
+
+    private async void OnVideoCallClicked(object? sender, EventArgs e) =>
+        await this.PlaceCallAsync(includeVideo: true);
+
+    private async Task PlaceCallAsync(bool includeVideo)
     {
         string targetExtension = this.TargetExtensionEntry.Text ?? string.Empty;
 
@@ -242,7 +248,7 @@ public partial class CallPage : ContentPage
 
         try
         {
-            this.currentCallHandle = await this.callClient.PlaceCallAsync(targetExtension);
+            this.currentCallHandle = await this.callClient.PlaceCallAsync(targetExtension, includeVideo);
         }
         catch (Exception exception)
         {
