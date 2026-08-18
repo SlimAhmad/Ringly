@@ -254,12 +254,24 @@ public sealed class AndroidVideoEndPoint : IVideoSource, IVideoSink, IFrameAnaly
     public Task StartVideo()
     {
         this.isSourcePaused = false;
-        return this.attachedCameraView?.StartAsync() ?? Task.CompletedTask;
+
+        // Confirmed live via a real device crash: CameraView.StartAsync/StopAsync end up calling
+        // AndroidX's LifecycleRegistry.SetCurrentState internally (CameraLifecycleOwner), which
+        // throws IllegalStateException ("must be called on the main thread") unless invoked from
+        // Android's UI thread. This method is called from SipSorceryCallClient's
+        // mediaSession.onconnectionstatechange handler, which runs on SIPSorcery's own internal
+        // event-dispatch thread — MainThread.InvokeOnMainThreadAsync marshals the call across.
+        return this.attachedCameraView is null
+            ? Task.CompletedTask
+            : MainThread.InvokeOnMainThreadAsync(() => this.attachedCameraView.StartAsync());
     }
 
     public Task CloseVideo()
     {
-        return this.attachedCameraView?.StopAsync() ?? Task.CompletedTask;
+        // Same main-thread requirement as StartVideo above.
+        return this.attachedCameraView is null
+            ? Task.CompletedTask
+            : MainThread.InvokeOnMainThreadAsync(() => this.attachedCameraView.StopAsync());
     }
 
     public Task PauseVideo()
