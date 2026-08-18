@@ -63,6 +63,17 @@ public sealed class AndroidVideoEndPoint : IVideoSource, IVideoSink, IFrameAnaly
     private DateTime lastDecodeLogAt = DateTime.MinValue;
     private DateTime lastDecodeSkipLogAt = DateTime.MinValue;
 
+    // Diagnostic only: confirmed live that "Encoded N video frames" never appeared at all in a
+    // real call log despite StartVideo() completing successfully — these narrow down whether
+    // CameraX/Shiny's analyzer pipeline is calling into this class at all (WantsFrame/AnalyzeAsync
+    // never invoked = a binding/use-case problem upstream of this code) versus being invoked but
+    // rejected by a condition inside AnalyzeAsync itself (a logic bug in this file).
+    private bool hasLoggedFirstWantsFrameCall;
+    private bool hasLoggedFirstAnalyzeCall;
+    private int wantsFrameTrueCountSinceLog;
+    private int wantsFrameFalseCountSinceLog;
+    private DateTime lastWantsFrameLogAt = DateTime.MinValue;
+
     public event EncodedSampleDelegate? OnVideoSourceEncodedSample;
     public event RawVideoSampleDelegate? OnVideoSourceRawSample;
     public event RawVideoSampleFasterDelegate? OnVideoSourceRawSampleFaster;
@@ -87,6 +98,7 @@ public sealed class AndroidVideoEndPoint : IVideoSource, IVideoSink, IFrameAnaly
     {
         this.attachedCameraView = cameraView;
         cameraView.Analyzer = this;
+        Logger.LogInformation("AttachCameraView called, Analyzer assigned to this instance.");
     }
 
     public void DetachCameraView()
@@ -102,10 +114,54 @@ public sealed class AndroidVideoEndPoint : IVideoSource, IVideoSink, IFrameAnaly
 
     public string Id => nameof(AndroidVideoEndPoint);
 
-    public bool WantsFrame() => !this.isSourcePaused && this.HasEncodedVideoSubscribers();
+    public bool WantsFrame()
+    {
+        if (!this.hasLoggedFirstWantsFrameCall)
+        {
+            this.hasLoggedFirstWantsFrameCall = true;
+            Logger.LogInformation("WantsFrame called for the first time — the analyzer pipeline is reaching this class.");
+        }
+
+        bool wantsFrame = !this.isSourcePaused && this.HasEncodedVideoSubscribers();
+
+        if (wantsFrame)
+        {
+            this.wantsFrameTrueCountSinceLog++;
+        }
+        else
+        {
+            this.wantsFrameFalseCountSinceLog++;
+        }
+
+        if (DateTime.UtcNow - this.lastWantsFrameLogAt > TimeSpan.FromSeconds(2))
+        {
+            Logger.LogInformation(
+                "WantsFrame polled {TrueCount} true / {FalseCount} false in the last ~2s (isSourcePaused={IsSourcePaused}, hasSubscribers={HasSubscribers}).",
+                this.wantsFrameTrueCountSinceLog,
+                this.wantsFrameFalseCountSinceLog,
+                this.isSourcePaused,
+                this.HasEncodedVideoSubscribers());
+
+            this.lastWantsFrameLogAt = DateTime.UtcNow;
+            this.wantsFrameTrueCountSinceLog = 0;
+            this.wantsFrameFalseCountSinceLog = 0;
+        }
+
+        return wantsFrame;
+    }
 
     public ValueTask<IReadOnlyList<OverlayBox>?> AnalyzeAsync(CameraFrame frame, CancellationToken ct)
     {
+        if (!this.hasLoggedFirstAnalyzeCall)
+        {
+            this.hasLoggedFirstAnalyzeCall = true;
+            Logger.LogInformation(
+                "AnalyzeAsync called for the first time — frame type {FrameType}, {Width}x{Height}.",
+                frame.GetType().Name,
+                frame.Width,
+                frame.Height);
+        }
+
         if (frame is not AndroidCameraFrame androidFrame)
         {
             return ValueTask.FromResult<IReadOnlyList<OverlayBox>?>(null);
