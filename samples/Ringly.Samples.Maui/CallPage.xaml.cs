@@ -32,9 +32,13 @@ public partial class CallPage : ContentPage
         this.EventLogView.ItemsSource = this.eventLog;
     }
 #elif ANDROID
-    private readonly Platforms.Android.AndroidVideoEndPoint? androidVideoEndPoint;
+    // Typed to the shared interface, not either concrete implementation — see
+    // IAndroidVideoCaptureEndPoint.cs for why (A/B testing Shiny.Maui.Controls.Camera's capture
+    // pipeline against a hand-rolled CameraX one, per #143). MauiProgram.cs's DI registration
+    // alone decides which concrete type this resolves to.
+    private readonly Platforms.Android.IAndroidVideoCaptureEndPoint? androidVideoEndPoint;
 
-    public CallPage(ICallClient callClient, IAudioManager audioManager, Platforms.Android.AndroidVideoEndPoint androidVideoEndPoint)
+    public CallPage(ICallClient callClient, IAudioManager audioManager, Platforms.Android.IAndroidVideoCaptureEndPoint androidVideoEndPoint)
     {
         InitializeComponent();
         this.callClient = callClient;

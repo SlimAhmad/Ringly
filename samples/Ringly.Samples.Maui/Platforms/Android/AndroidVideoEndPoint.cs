@@ -27,7 +27,7 @@ namespace Ringly.Samples.Maui.Platforms.Android;
 // itself; rendering decoded remote frames to an on-screen surface is left to a following piece of
 // work (DecodedFrameReady exposes the raw decoded samples for that to consume, same contract as
 // CustomWindowsVideoEndPoint).
-public sealed class AndroidVideoEndPoint : IVideoSource, IVideoSink, IFrameAnalyzer, IDisposable
+public sealed class AndroidVideoEndPoint : IVideoSource, IVideoSink, IFrameAnalyzer, IAndroidVideoCaptureEndPoint, IDisposable
 {
     // VP8Codec.EncodeVideo requires both dimensions to be exact multiples of 16 — no
     // padding/cropping support in the foundation encoder (see VP8Codec.cs). Frames whose native

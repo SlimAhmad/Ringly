@@ -155,15 +155,37 @@ public static class MauiProgram
         builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSource>(androidAudioEndPoint);
         builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSink>(androidAudioEndPoint);
 
-        // Video counterpart — see AndroidVideoEndPoint.cs for why this repacks CameraX's
-        // YUV_420_888 planes into I420 instead of hand-rolling Camera2 directly. Registered the
-        // same way as the Windows video endpoint: a singleton under both IVideoSource/IVideoSink
-        // for SipSorceryCallClient's optional constructor parameters, plus its own concrete type
-        // so CallPage can resolve it directly to call AttachCameraView/DetachCameraView.
-        var androidVideoEndPoint = new Ringly.Samples.Maui.Platforms.Android.AndroidVideoEndPoint();
-        builder.Services.AddSingleton(androidVideoEndPoint);
-        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IVideoSource>(androidVideoEndPoint);
-        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IVideoSink>(androidVideoEndPoint);
+        // Video counterpart — two implementations exist side by side for A/B testing (see #143 /
+        // AndroidCameraXVideoEndPoint.cs's own comment for the full story): AndroidVideoEndPoint
+        // drives capture through Shiny.Maui.Controls.Camera's CameraView/IFrameAnalyzer;
+        // AndroidCameraXVideoEndPoint bypasses Shiny entirely and drives CameraX's
+        // ProcessCameraProvider/ImageAnalysis directly. Flip this flag to switch which one is
+        // registered — both implement IVideoSource/IVideoSink/IAndroidVideoCaptureEndPoint
+        // identically, so nothing else (CallPage included) needs to change either way.
+        const bool useHandRolledAndroidCamera = true;
+
+        SIPSorceryMedia.Abstractions.IVideoSource androidVideoSource;
+        SIPSorceryMedia.Abstractions.IVideoSink androidVideoSink;
+        Ringly.Samples.Maui.Platforms.Android.IAndroidVideoCaptureEndPoint androidVideoCaptureEndPoint;
+
+        if (useHandRolledAndroidCamera)
+        {
+            var handRolledVideoEndPoint = new Ringly.Samples.Maui.Platforms.Android.AndroidCameraXVideoEndPoint();
+            androidVideoSource = handRolledVideoEndPoint;
+            androidVideoSink = handRolledVideoEndPoint;
+            androidVideoCaptureEndPoint = handRolledVideoEndPoint;
+        }
+        else
+        {
+            var shinyVideoEndPoint = new Ringly.Samples.Maui.Platforms.Android.AndroidVideoEndPoint();
+            androidVideoSource = shinyVideoEndPoint;
+            androidVideoSink = shinyVideoEndPoint;
+            androidVideoCaptureEndPoint = shinyVideoEndPoint;
+        }
+
+        builder.Services.AddSingleton(androidVideoCaptureEndPoint);
+        builder.Services.AddSingleton(androidVideoSource);
+        builder.Services.AddSingleton(androidVideoSink);
 #endif
 
         builder.Services.AddSingleton<ICallClient, SipSorceryCallClient>();
