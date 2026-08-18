@@ -4,21 +4,24 @@ Updates the LAN IP used by coturn and the MAUI sample after switching networks (
 hotspot, etc.), and restarts the coturn container so it picks up the change immediately.
 
 .DESCRIPTION
-Three files need to agree on the host machine's current LAN IP, and a stale value in any one of
+Four files need to agree on the host machine's current LAN IP, and a stale value in any one of
 them causes a *silent* mid-call failure (ICE/TURN candidates pointing at an address unreachable
 from a real device), not a loud connection-time error - see docker/coturn/turnserver.conf's
-external-ip comment and docker/asterisk/config/pjsip.conf's external_media_address comment for
-the full story:
+external-ip comment, docker/asterisk/config/pjsip.conf's external_media_address comment, and
+docker/asterisk/config/rtp.conf's externaddr comment for the full story:
   - docker/coturn/turnserver.conf's external-ip (what coturn advertises as the relay candidate
     address)
   - docker/asterisk/config/pjsip.conf's external_media_address/external_signaling_address (what
-    Asterisk itself advertises as ITS candidate address - Asterisk terminates/relays media per-leg
-    for webrtc=yes endpoints, so its own container-internal IP being unreachable from outside
-    Docker is just as real a failure mode as coturn's)
+    Asterisk's SIP/SDP layer advertises as ITS candidate address - Asterisk terminates/relays
+    media per-leg for webrtc=yes endpoints, so its own container-internal IP being unreachable
+    from outside Docker is just as real a failure mode as coturn's)
+  - docker/asterisk/config/rtp.conf's externaddr (the RTP/ICE engine's OWN, completely separate
+    NAT-traversal setting - pjsip.conf's external_media_address only rewrites the SDP's "c="
+    line; the actual "a=candidate:...typ host" line real clients dial into comes from here)
   - samples/Ringly.Samples.Maui/MauiProgram.cs's CurrentLanHostAddress constant (what the MAUI
     app on a real Android device uses to reach Asterisk/coturn)
 
-This script detects the current IPv4 address on the given network adapter, updates all three
+This script detects the current IPv4 address on the given network adapter, updates all four
 files, and rebuilds+recreates the coturn and asterisk containers - replacing the previous
 multi-step manual process (find IP, edit files, rebuild containers) with one command.
 
@@ -42,6 +45,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $turnConf = Join-Path $PSScriptRoot "coturn\turnserver.conf"
 $pjsipConf = Join-Path $PSScriptRoot "asterisk\config\pjsip.conf"
+$rtpConf = Join-Path $PSScriptRoot "asterisk\config\rtp.conf"
 $mauiProgram = Join-Path $repoRoot "samples\Ringly.Samples.Maui\MauiProgram.cs"
 $composeFile = Join-Path $PSScriptRoot "docker-compose.yml"
 
@@ -55,11 +59,14 @@ if (-not $ip) {
 
 Write-Host "Detected LAN IP: $ip (interface: $InterfaceAlias)"
 
-# turnserver.conf: replace the whole external-ip=... line.
+# turnserver.conf: replace the whole external-ip=... line. Checking the RESULT contains the
+# target line (not "did the content change") avoids a false-positive warning when the IP happens
+# to already be correct - a same-value replace leaves $updated identical to the original even
+# though the regex matched and did its job.
 $turnConfContent = Get-Content $turnConf -Raw
 $updatedTurnConf = $turnConfContent -replace '(?m)^external-ip=.*$', "external-ip=$ip"
-if ($updatedTurnConf -eq $turnConfContent) {
-    Write-Warning "No external-ip= line found/changed in $turnConf - check the file wasn't restructured."
+if ($updatedTurnConf -notmatch "(?m)^external-ip=$([regex]::Escape($ip))$") {
+    Write-Warning "No external-ip= line found in $turnConf - check the file wasn't restructured."
 }
 Set-Content -Path $turnConf -Value $updatedTurnConf -NoNewline
 Write-Host "Updated $turnConf"
@@ -76,6 +83,15 @@ if ($updatedPjsipContent -eq $pjsipContent -and $pjsipContent -notmatch [regex]:
 }
 Set-Content -Path $pjsipConf -Value $updatedPjsipContent -NoNewline
 Write-Host "Updated $pjsipConf"
+
+# rtp.conf: same marker convention, single externaddr=... line right after it.
+$rtpContent = Get-Content $rtpConf -Raw
+$updatedRtpContent = $rtpContent -replace '(?m)(?<=; ringly:lan-ip\r?\n)externaddr=.*$', "externaddr=$ip"
+if ($updatedRtpContent -eq $rtpContent -and $rtpContent -notmatch [regex]::Escape($ip)) {
+    Write-Warning "ringly:lan-ip marker not found in $rtpConf - check the file wasn't restructured."
+}
+Set-Content -Path $rtpConf -Value $updatedRtpContent -NoNewline
+Write-Host "Updated $rtpConf"
 
 # MauiProgram.cs: replace only the string literal on the line right after the "ringly:lan-ip"
 # marker comment, so this keeps working even if the constant gets renamed again later.
@@ -96,9 +112,18 @@ Write-Host "Updated $mauiProgram"
 # and by hand appeared to succeed (clean startup logs) while the running container silently kept
 # serving stale config from a much earlier build - calls were routing media to an unreachable
 # address the whole time, with no error at connection time, only broken/silent audio and choppy
-# video partway into calls. "up -d --build" rebuilds the image (fast - Docker layer caching skips
-# the unchanged steps) and recreates the container.
-Write-Host "Rebuilding and recreating coturn and asterisk (a plain restart would NOT pick up the new IP - see comment above)..."
+# video partway into calls.
+#
+# Also explicitly removing the container and image before rebuilding, not just "up -d --build" -
+# confirmed live (twice) that Docker Desktop can leave the *running* container silently serving a
+# stale pre-fix image even after a "successful" --build/--force-recreate, most likely a
+# containerd-vs-classic image store disagreement about what the "latest" tag currently points to.
+# A plain "docker run" of the freshly-built image showed the correct content while the
+# compose-managed container did not, until the old container AND image were removed outright first.
+Write-Host "Rebuilding coturn and asterisk (removing old containers/images first - see comment above for why a plain restart or --build alone isn't reliable enough)..."
+docker compose -f $composeFile stop coturn asterisk
+docker rm -f docker-coturn-1 docker-asterisk-1 2>$null
+docker rmi docker-coturn:latest docker-asterisk:latest 2>$null
 docker compose -f $composeFile up -d --build coturn asterisk
 
 Write-Host ""
