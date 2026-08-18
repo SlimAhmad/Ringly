@@ -60,11 +60,24 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
+		<!-- Pinned above the SDK-implicit $(MauiVersion) (10.0.20) — Shiny.Maui.Controls.Camera 1.0.2
+		     requires Microsoft.Maui.Controls >= 10.0.90, confirmed via a real NU1605 downgrade-conflict
+		     restore failure. -->
+		<PackageReference Include="Microsoft.Maui.Controls" Version="10.0.90" />
 		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
 		<!-- Cross-platform (Android + Windows) audio playback for the dial/ring tones — avoids
 		     needing separate platform-specific players for a simple looped in-memory WAV clip. -->
 		<PackageReference Include="Plugin.Maui.Audio" Version="4.0.0" />
+		<!-- Cross-platform camera capture (CameraView + IFrameAnalyzer) for video calling — chosen
+		     over hand-rolling MediaCapture/Camera2 directly after confirming its analyzer hands back
+		     real per-frame native pixel buffers (WindowsCameraFrame.Bgra, AndroidCameraFrame's CameraX
+		     IImageProxy) with zero copies, not just derived detection results. -->
+		<PackageReference Include="Shiny.Maui.Controls.Camera" Version="1.0.2" />
+		<!-- Pure managed C# VP8 codec (no native binaries/PInvoke) for video calling — same
+		     vendor/version family as the SIPSorcery/SIPSorceryMedia.Abstractions packages already used
+		     by Ringly.Client.SipSorcery, and genuinely cross-platform (Windows + Android from one
+		     package), unlike SIPSorceryMedia.Encoders' VP8 (Windows-only native libvpx binaries). -->
+		<PackageReference Include="SIPSorcery.VP8" Version="10.0.15" />
 	</ItemGroup>
 
 	<ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
