@@ -28,4 +28,7 @@ public partial class CallProvisioningServiceTests
 
     private static Guid GetRandomId() =>
         Guid.NewGuid();
+
+    private static string GetRandomExtension() =>
+        Guid.NewGuid().ToString("N")[..6];
 }

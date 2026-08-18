@@ -36,6 +36,40 @@ public partial class AsteriskSipEndpointConfigFoundationService : IAsteriskSipEn
         await this.asteriskBroker.InsertSipEndpointConfigAsync(config);
     });
 
+    public ValueTask RemoveSipEndpointConfigAsync(string extension) =>
+    TryCatch(async () =>
+    {
+        ValidateExtension(extension);
+
+        if (!await this.SipEndpointConfigExistsAsync(extension))
+        {
+            throw new ExtensionNotFoundException(
+                new InvalidOperationException($"Extension '{extension}' is not provisioned."));
+        }
+
+        // Reverse of Insert's aor->auth->endpoint order, since endpoint references both aor and
+        // auth by id. Each object removed independently (not one bundled broker call) so that
+        // "endpoint" already being absent — expected today, given the known PUT bug documented on
+        // InsertSipEndpointConfigAsync means it was likely never created — doesn't abort cleanup
+        // of auth/aor, which DO exist and need removing.
+        foreach (string objectType in new[] { "endpoint", "auth", "aor" })
+        {
+            await this.RemoveSipEndpointConfigObjectIfExistsAsync(objectType, extension);
+        }
+    });
+
+    private async ValueTask RemoveSipEndpointConfigObjectIfExistsAsync(string objectType, string extension)
+    {
+        try
+        {
+            await this.asteriskBroker.RemoveSipEndpointConfigObjectAsync(objectType, extension);
+        }
+        catch (HttpResponseNotFoundException)
+        {
+            // Idempotent delete — already gone is not a failure.
+        }
+    }
+
     private async ValueTask<bool> SipEndpointConfigExistsAsync(string extension)
     {
         try

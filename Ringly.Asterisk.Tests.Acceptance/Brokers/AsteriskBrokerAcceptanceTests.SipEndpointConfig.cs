@@ -116,4 +116,52 @@ public partial class AsteriskBrokerAcceptanceTests
             await this.DeleteSipEndpointConfigAsync(extension);
         }
     }
+
+    // Confirms the real remove path end-to-end: aor/auth (the two objects Add can actually create
+    // today, see the endpoint blocker documented above) genuinely disappear from Asterisk's
+    // realtime config after RemoveSipEndpointConfigAsync, not just that the call doesn't throw.
+    [Fact]
+    public async Task ShouldRemoveSipEndpointConfigAsync()
+    {
+        // given
+        string extension = CreateRandomExtension();
+
+        var inputConfig = new SipEndpointConfig
+        {
+            Extension = extension,
+            Password = CreateRandomPassword()
+        };
+
+        ValueTask addTask = this.sipEndpointConfigFoundationService.AddSipEndpointConfigAsync(inputConfig);
+        await Assert.ThrowsAsync<SipEndpointConfigDependencyException>(addTask.AsTask);
+
+        // when
+        await this.sipEndpointConfigFoundationService.RemoveSipEndpointConfigAsync(extension);
+
+        // then
+        using HttpResponseMessage aorResponse =
+            await this.rawAriClient.GetAsync($"ari/asterisk/config/dynamic/res_pjsip/aor/{extension}");
+
+        using HttpResponseMessage authResponse =
+            await this.rawAriClient.GetAsync($"ari/asterisk/config/dynamic/res_pjsip/auth/{extension}");
+
+        aorResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        authResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task ShouldThrowDependencyValidationExceptionOnRemoveIfExtensionNotFoundAsync()
+    {
+        // given
+        string extension = CreateRandomExtension();
+
+        // when
+        ValueTask removeTask = this.sipEndpointConfigFoundationService.RemoveSipEndpointConfigAsync(extension);
+
+        // then
+        SipEndpointConfigDependencyValidationException actualException =
+            await Assert.ThrowsAsync<SipEndpointConfigDependencyValidationException>(removeTask.AsTask);
+
+        actualException.InnerException.Should().BeOfType<ExtensionNotFoundException>();
+    }
 }

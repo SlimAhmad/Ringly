@@ -30,4 +30,18 @@ public partial class AsteriskSipEndpointConfigFoundationService
 
         invalidSipEndpointConfigException.ThrowIfContainsErrors();
     }
+
+    private static void ValidateExtension(string extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension))
+        {
+            var invalidSipEndpointConfigException = new InvalidSipEndpointConfigException();
+
+            invalidSipEndpointConfigException.UpsertDataList(
+                key: "extension",
+                value: "Value is required");
+
+            invalidSipEndpointConfigException.ThrowIfContainsErrors();
+        }
+    }
 }

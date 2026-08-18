@@ -42,6 +42,41 @@ public partial class CallProvisioningService
         }
     }
 
+    private delegate ValueTask ReturningValueTaskFunction();
+
+    private async ValueTask TryCatch(ReturningValueTaskFunction returningValueTaskFunction)
+    {
+        try
+        {
+            await returningValueTaskFunction();
+        }
+        catch (InvalidSipCredentialsException invalidSipCredentialsException)
+        {
+            throw await CreateAndLogValidationException(invalidSipCredentialsException);
+        }
+        catch (SipEndpointConfigValidationException sipEndpointConfigValidationException)
+        {
+            throw await CreateAndLogValidationException(sipEndpointConfigValidationException);
+        }
+        catch (SipEndpointConfigDependencyValidationException sipEndpointConfigDependencyValidationException)
+        {
+            throw await CreateAndLogDependencyValidationException(sipEndpointConfigDependencyValidationException);
+        }
+        catch (SipEndpointConfigDependencyException sipEndpointConfigDependencyException)
+        {
+            throw await CreateAndLogDependencyException(sipEndpointConfigDependencyException);
+        }
+        catch (SipEndpointConfigServiceException sipEndpointConfigServiceException)
+        {
+            throw await CreateAndLogServiceException(sipEndpointConfigServiceException);
+        }
+        catch (Exception exception)
+        {
+            var failedSipCredentialsServiceException = new FailedSipCredentialsServiceException(exception);
+            throw await CreateAndLogServiceException(failedSipCredentialsServiceException);
+        }
+    }
+
     private async ValueTask<SipCredentialsValidationException> CreateAndLogValidationException(Xeption exception)
     {
         var sipCredentialsValidationException = new SipCredentialsValidationException(exception);
