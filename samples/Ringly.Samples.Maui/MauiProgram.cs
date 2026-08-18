@@ -55,16 +55,20 @@ public static class MauiProgram
         // Previous value "10.253.155.49" was the phone's own mobile-hotspot Wi-Fi — confirmed a
         // likely source of the packet loss/jitter behind choppy audio and BYE timeouts (see
         // CustomWindowsAudioEndPoint.cs/AndroidAudioEndPoint.cs), since the phone was acting as
-        // both the AP and a real-time audio endpoint at once. Kept here as
-        // MobileWifiLanHostAddress for reference if reverting to that setup.
-        // const string MobileWifiLanHostAddress = "10.253.155.49";
+        // both the AP and a real-time audio endpoint at once. Kept here for reference if
+        // reverting to that setup.
+        //const string MobileWifiLanHostAddress = "10.205.226.49";
 
         // Current LAN: both devices on the same router-provided Wi-Fi (found via
         // Get-NetIPAddress/ipconfig on the "Wi-Fi" adapter, not Tailscale/VPN/APIPA addresses).
-        const string LanHostAddress = "192.168.101.36";
+        // Must be kept in sync with docker/coturn/turnserver.conf's external-ip — see that file's
+        // comment for why (coturn advertises this as the relay candidate address, so a stale value
+        // here/there causes mid-call ICE/TURN relay failures, not a connection-time error).
+        //const string LanHostAddress = "192.168.101.36";
+        const string OfficeLanHostAddress = "192.168.1.92";
 
         string host = DeviceInfo.Platform == DevicePlatform.Android
-            ? (DeviceInfo.Current.DeviceType == DeviceType.Virtual ? "10.0.2.2" : LanHostAddress)
+            ? (DeviceInfo.Current.DeviceType == DeviceType.Virtual ? "10.0.2.2" : OfficeLanHostAddress)
             : "localhost";
 
         builder.Services.Configure<SipSorceryCallOptions>(options =>
