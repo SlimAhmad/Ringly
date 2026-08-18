@@ -44,31 +44,24 @@ public static class MauiProgram
         // `nc -z localhost 8089` is refused — localhost inside the emulator is the emulator
         // itself, not the host). A real Android device is on NEITHER of those networks — it's
         // just another device on the same LAN, and needs the host machine's actual routable LAN
-        // IP instead (find it with `ipconfig` — this is also what coturn's
-        // docker/coturn/turnserver.conf external-ip is set to, and needs updating alongside it if
-        // this network changes). DeviceInfo.Current.DeviceType distinguishes an emulator
-        // (Virtual) from a real device (Physical) so both can be tested without editing this by
-        // hand each time. The docker stack's published ports need to be reachable from your LAN
-        // (Windows Firewall and, if applicable, your router/AP client-isolation settings can
-        // block this even when the ports are correctly published), or tunneled (e.g. ngrok) if
-        // it's off-network entirely.
-        // Previous value "10.253.155.49" was the phone's own mobile-hotspot Wi-Fi — confirmed a
-        // likely source of the packet loss/jitter behind choppy audio and BYE timeouts (see
-        // CustomWindowsAudioEndPoint.cs/AndroidAudioEndPoint.cs), since the phone was acting as
-        // both the AP and a real-time audio endpoint at once. Kept here for reference if
-        // reverting to that setup.
-        //const string MobileWifiLanHostAddress = "10.205.226.49";
-
-        // Current LAN: both devices on the same router-provided Wi-Fi (found via
-        // Get-NetIPAddress/ipconfig on the "Wi-Fi" adapter, not Tailscale/VPN/APIPA addresses).
+        // IP instead. DeviceInfo.Current.DeviceType distinguishes an emulator (Virtual) from a
+        // real device (Physical) so both can be tested without editing this by hand each time.
+        // The docker stack's published ports need to be reachable from your LAN (Windows
+        // Firewall and, if applicable, your router/AP client-isolation settings can block this
+        // even when the ports are correctly published), or tunneled (e.g. ngrok) if it's
+        // off-network entirely.
+        //
         // Must be kept in sync with docker/coturn/turnserver.conf's external-ip — see that file's
-        // comment for why (coturn advertises this as the relay candidate address, so a stale value
-        // here/there causes mid-call ICE/TURN relay failures, not a connection-time error).
-        //const string LanHostAddress = "192.168.101.36";
-        const string OfficeLanHostAddress = "192.168.1.92";
+        // comment for why (coturn advertises this as the relay candidate address, so a stale
+        // value here/there causes silent mid-call ICE/TURN relay failures, not a loud
+        // connection-time error). Run docker/update-network-ip.ps1 after switching networks to
+        // update both this and turnserver.conf together and restart coturn in one step, instead
+        // of editing by hand — it looks for the "ringly:lan-ip" marker below to find this line.
+        // ringly:lan-ip
+        const string CurrentLanHostAddress = "10.205.226.49";
 
         string host = DeviceInfo.Platform == DevicePlatform.Android
-            ? (DeviceInfo.Current.DeviceType == DeviceType.Virtual ? "10.0.2.2" : OfficeLanHostAddress)
+            ? (DeviceInfo.Current.DeviceType == DeviceType.Virtual ? "10.0.2.2" : CurrentLanHostAddress)
             : "localhost";
 
         builder.Services.Configure<SipSorceryCallOptions>(options =>
