@@ -52,7 +52,7 @@ app.MapPost("/clients/{clientId:guid}/provision", async (
     InMemorySipCredentialsStore credentialsStore) =>
 {
     SipCredentials credentials = await provisioningService.AddClientCredentialsAsync(clientId);
-    credentialsStore.Add(credentials);
+    await credentialsStore.AddAsync(credentials);
     return Results.Ok(credentials);
 })
 .WithName("ProvisionClient");
