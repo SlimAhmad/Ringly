@@ -83,9 +83,13 @@
                 </VerticalStackLayout>
             </Grid>
 
-            <!-- Active-call controls: Speaker / End / Mute. -->
+            <!-- Active-call controls: Speaker / End / Mute / Video / Flip (Android only). Spacing
+                 kept tight enough for 5 buttons to fit a typical ~360-411dp phone screen width
+                 without wrapping — confirmed live that the original 36dp spacing (fine for 4
+                 buttons) pushed the 5th (Flip) button off the right edge entirely once added,
+                 with no visual clipping/scroll indication that it was even there. -->
             <HorizontalStackLayout x:Name="ActiveCallButtons" Grid.Row="2" IsVisible="False"
-                                    Spacing="36" HorizontalOptions="Center" Margin="0,0,0,12">
+                                    Spacing="16" HorizontalOptions="Center" Margin="0,0,0,12">
                 <VerticalStackLayout Spacing="6">
                     <Button x:Name="SpeakerButton" Text="🔊" FontSize="20" Clicked="OnSpeakerClicked"
                             BackgroundColor="#2A2E3F" TextColor="White"
