@@ -4,6 +4,10 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <!-- First raw DB dependency in this solution — used only for the "endpoint" PJSIP realtime
+         object, to bypass a confirmed upstream Asterisk/Postgres bug that blocks it via ARI's
+         normal PUT (see AsteriskOptions.DatabaseConnectionString). -->
+    <PackageReference Include="Npgsql" Version="9.0.3" />
     <PackageReference Include="RESTFulSense" Version="3.2.0" />
     <PackageReference Include="System.Reactive" Version="7.0.0" />
     <PackageReference Include="Xeption" Version="2.9.0" />

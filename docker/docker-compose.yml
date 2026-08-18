@@ -5,6 +5,14 @@ services:
       POSTGRES_USER: asterisk
       POSTGRES_PASSWORD: asterisk
       POSTGRES_DB: asterisk
+    ports:
+      # Only host-side code needs this (AsteriskBroker's direct SQL insert for the "endpoint"
+      # PJSIP object, see AsteriskOptions.DatabaseConnectionString) — Asterisk itself reaches
+      # postgres over the compose-internal network regardless, same as asterisk's ARI/AMI ports
+      # already being published for the same reason. Host port 5433, not 5432 — confirmed via a
+      # live auth failure that a native Postgres install can already be running on the standard
+      # port on a dev machine, silently intercepting connections meant for this container.
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
