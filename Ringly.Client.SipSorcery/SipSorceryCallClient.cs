@@ -176,9 +176,9 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         return new ValueTask(registrationCompletionSource.Task);
     }
 
-    public async ValueTask<CallHandle> PlaceCallAsync(string targetExtension)
+    public async ValueTask<CallHandle> PlaceCallAsync(string targetExtension, bool includeVideo = true)
     {
-        var mediaSession = this.CreateMediaSession();
+        var mediaSession = this.CreateMediaSession(includeVideo);
 
         // A bare extension (e.g. "1001") is not a resolvable SIP destination on its own — with
         // no "@domain" part, SIPSorcery's URI resolution falls back to legacy dotted-decimal
@@ -326,7 +326,12 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         this.events.Dispose();
     }
 
-    private RTCPeerConnection CreateMediaSession()
+    // includeVideo=false is how PlaceCallAsync's own includeVideo option skips offering a video
+    // track for a deliberately audio-only call — see AnswerCallAsync's call site for why it
+    // always passes the default true regardless: the answer side's video track only actually
+    // negotiates against whatever "m=video" line the remote OFFER contains in the first place, so
+    // there's no separate audio-only toggle needed there.
+    private RTCPeerConnection CreateMediaSession(bool includeVideo = true)
     {
         var mediaSession = new RTCPeerConnection(this.rtcConfiguration);
 
@@ -347,7 +352,7 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         // registered — there's no "signaling-only" fallback video format the way PCMU serves for
         // audio, and forcing a video "m=" line onto every audio-only call would negotiate a
         // capability nothing behind it can use.
-        if (this.videoSource is not null || this.videoSink is not null)
+        if (includeVideo && (this.videoSource is not null || this.videoSink is not null))
         {
             List<VideoFormat> videoFormats = this.videoSource?.GetVideoSourceFormats()
                 ?? this.videoSink!.GetVideoSinkFormats();

@@ -4,7 +4,12 @@ namespace Ringly.Client.Abstractions;
 
 public partial interface ICallClient
 {
-    ValueTask<CallHandle> PlaceCallAsync(string targetExtension);
+    // includeVideo controls whether THIS side offers a video track at all — lets a caller
+    // deliberately place an audio-only call even when a video source/sink is registered, useful
+    // for isolating whether audio behaves differently with video's extra bandwidth/processing
+    // sharing the same call. No effect on a client with no video source/sink registered in the
+    // first place (there was never a video track to offer either way).
+    ValueTask<CallHandle> PlaceCallAsync(string targetExtension, bool includeVideo = true);
     ValueTask AnswerCallAsync(CallHandle handle);
     ValueTask HangupAsync(CallHandle handle);
     ValueTask MuteAsync();
