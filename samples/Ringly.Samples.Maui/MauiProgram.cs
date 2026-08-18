@@ -80,7 +80,21 @@ public static class MauiProgram
             // WebSocket (e.g. reaching Asterisk through a proxy that only permits HTTP(S)).
             options.RegistrarHost = $"{host}:5060";
             options.RegistrationExpirySeconds = 120;
-            options.IceServerUrls = [$"turn:{host}:3478"];
+
+            // NOT $"turn:{host}:3478" — on Windows, host is "localhost" for SIP signaling
+            // (registration/INVITE have always worked fine that way, unrelated to this), but the
+            // ICE server URL specifically must NOT resolve to loopback here. Confirmed live: once
+            // X_BindAddress (below) started binding the RTP socket to this machine's real LAN IP,
+            // every single TURN allocate request to turn:localhost (127.0.0.1) started failing
+            // immediately and unconditionally with SocketException 10049 ("The requested address
+            // is not valid in its context") — Windows Sockets refuses to send loopback-destined
+            // traffic from a socket explicitly bound to a real, non-loopback address. Using the
+            // same LAN IP for both fixes it: sending from 10.x.x.x to 10.x.x.x:3478 is a normal
+            // same-interface send, not a loopback/real-IP mismatch. Android already used its own
+            // real address here (CurrentLanHostAddress is literally what it dials Asterisk/coturn
+            // at), so this just brings Windows in line with the same reasoning.
+            string iceServerHost = DeviceInfo.Platform == DevicePlatform.Android ? host : CurrentLanHostAddress;
+            options.IceServerUrls = [$"turn:{iceServerHost}:3478"];
             options.IceServerUsername = "ringly";
             options.IceServerCredential = "ringly-dev-turn";
 
