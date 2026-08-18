@@ -56,14 +56,20 @@ public partial class AsteriskBrokerAcceptanceTests : IDisposable
     private static string CreateRandomPassword() =>
         new MnemonicString(wordCount: 4).GetValue();
 
-    // Test-only cleanup — production code has no delete path yet (row #10's
-    // RemoveClientCredentialsAsync is deferred), so this goes straight at the real ARI
-    // dynamic-config DELETE endpoint rather than through the broker under test.
+    // Test cleanup, now routed through the real production path
+    // (AsteriskSipEndpointConfigFoundationService.RemoveSipEndpointConfigAsync) rather than a raw
+    // ARI DELETE — this doubles as ongoing acceptance coverage for the remove path on every test
+    // that provisions an extension. Swallows failures since cleanup runs in a `finally` and a test
+    // that never got as far as provisioning (e.g. failed before Add) would otherwise mask the
+    // real assertion failure with an unrelated "extension not found" exception here.
     private async Task DeleteSipEndpointConfigAsync(string extension)
     {
-        foreach (string objectType in new[] { "endpoint", "auth", "aor" })
+        try
         {
-            await this.rawAriClient.DeleteAsync($"ari/asterisk/config/dynamic/res_pjsip/{objectType}/{extension}");
+            await this.sipEndpointConfigFoundationService.RemoveSipEndpointConfigAsync(extension);
+        }
+        catch (Exception)
+        {
         }
     }
 

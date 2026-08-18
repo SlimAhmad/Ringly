@@ -7,4 +7,5 @@ public partial interface IAsteriskBroker
 {
     ValueTask<IReadOnlyList<ConfigTuple>> RetrieveSipEndpointConfigAsync(string extension);
     ValueTask InsertSipEndpointConfigAsync(SipEndpointConfig config);
+    ValueTask RemoveSipEndpointConfigObjectAsync(string objectType, string extension);
 }

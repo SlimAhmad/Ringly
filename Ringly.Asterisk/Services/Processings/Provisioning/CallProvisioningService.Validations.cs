@@ -17,4 +17,18 @@ public partial class CallProvisioningService
             invalidSipCredentialsException.ThrowIfContainsErrors();
         }
     }
+
+    private static void ValidateExtension(string extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension))
+        {
+            var invalidSipCredentialsException = new InvalidSipCredentialsException();
+
+            invalidSipCredentialsException.UpsertDataList(
+                key: nameof(extension),
+                value: "Value is required");
+
+            invalidSipCredentialsException.ThrowIfContainsErrors();
+        }
+    }
 }

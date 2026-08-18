@@ -43,6 +43,14 @@ public partial class CallProvisioningService : ICallProvisioningService
         };
     });
 
+    public ValueTask RemoveClientCredentialsAsync(string extension) =>
+    TryCatch(async () =>
+    {
+        ValidateExtension(extension);
+
+        await this.sipEndpointConfigFoundationService.RemoveSipEndpointConfigAsync(extension);
+    });
+
     private static string GenerateExtension() =>
         RandomNumberGenerator.GetInt32(ExtensionMinValue, ExtensionMaxValue + 1).ToString();
 

@@ -35,6 +35,20 @@ public partial class AsteriskBroker
         ]);
     }
 
+    // Confirmed working against real ARI: unlike the PUT/insert path, which is blocked for the
+    // "endpoint" object type by a confirmed upstream Asterisk bug (res_config_pgsql doesn't quote
+    // SQL identifiers like "100rel" — see InsertSipEndpointConfigAsync), DELETE isn't affected by
+    // that bug. One object type per call (not a bundled 3-step remove like Insert) — confirmed via
+    // a real acceptance-test run that "endpoint" 404s (it was never created, given the PUT bug
+    // above), and per the broker rule that brokers must not handle exceptions, this layer cannot
+    // itself tolerate that and continue on to auth/aor — that orchestration + idempotent-delete
+    // tolerance belongs in AsteriskSipEndpointConfigFoundationService instead.
+    public async ValueTask RemoveSipEndpointConfigObjectAsync(string objectType, string extension)
+    {
+        string relativeUrl = string.Format(PjsipConfigRelativeUrlFormat, objectType, Uri.EscapeDataString(extension));
+        await this.DeleteAsync(relativeUrl);
+    }
+
     private async ValueTask PutPjsipConfigAsync(string objectType, string id, IReadOnlyList<ConfigTuple> fields)
     {
         string relativeUrl = string.Format(PjsipConfigRelativeUrlFormat, objectType, Uri.EscapeDataString(id));
