@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Maui.Devices;
 using Plugin.Maui.Audio;
+using Shiny;
 using Ringly.Client.Abstractions;
 using Ringly.Client.SipSorcery;
 
@@ -22,6 +23,7 @@ public static class MauiProgram
             });
 
         builder.AddAudio();
+        builder.UseShinyCamera();
 
         builder.Logging.AddDebug();
 #if ANDROID
@@ -130,6 +132,17 @@ public static class MauiProgram
         var windowsAudioEndPoint = new Ringly.Samples.Maui.Platforms.Windows.CustomWindowsAudioEndPoint(audioEncoder);
         builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSource>(windowsAudioEndPoint);
         builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSink>(windowsAudioEndPoint);
+
+        // Video counterpart — see CustomWindowsVideoEndPoint.cs for why this hand-rolls a
+        // Shiny.Maui.Controls.Camera IFrameAnalyzer + SIPSorcery.VP8 pipeline instead of using a
+        // pre-built SIPSorceryMedia video package (none exists cross-platform). Registered as a
+        // singleton the same way as audio; also registered under its own concrete type so
+        // CallPage can resolve it directly to call AttachCameraView/DetachCameraView, which
+        // aren't part of the IVideoSource/IVideoSink abstractions.
+        var windowsVideoEndPoint = new Ringly.Samples.Maui.Platforms.Windows.CustomWindowsVideoEndPoint();
+        builder.Services.AddSingleton(windowsVideoEndPoint);
+        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IVideoSource>(windowsVideoEndPoint);
+        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IVideoSink>(windowsVideoEndPoint);
 #elif ANDROID
         // No official SIPSorceryMedia.Android package exists — AndroidAudioEndPoint hand-rolls
         // the same source/sink surface via AudioRecord/AudioTrack (see its own file for why).
