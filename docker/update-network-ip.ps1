@@ -70,8 +70,16 @@ if ($updatedMauiContent -eq $mauiContent -and $mauiContent -notmatch [regex]::Es
 Set-Content -Path $mauiProgram -Value $updatedMauiContent -NoNewline
 Write-Host "Updated $mauiProgram"
 
-Write-Host "Restarting coturn..."
-docker compose -f $composeFile restart coturn
+# NOT "restart" - coturn/Dockerfile COPYs turnserver.conf into the image at build time rather
+# than bind-mounting it, so a plain restart brings the container back up on the OLD image with
+# the OLD baked-in external-ip. Confirmed live: every previous "restart coturn" in this script
+# and by hand appeared to succeed (clean startup logs) while the running container silently kept
+# serving a stale external-ip from a much earlier build - every call needing the TURN relay path
+# was routing to an unreachable address the whole time, with no error at connection time, only
+# broken/silent audio and choppy video partway into calls. "up -d --build" rebuilds the image
+# (fast - Docker layer caching skips the unchanged apk/openssl step) and recreates the container.
+Write-Host "Rebuilding and recreating coturn (a plain restart would NOT pick up the new IP - see comment above)..."
+docker compose -f $composeFile up -d --build coturn
 
 Write-Host ""
 Write-Host "Done. Rebuild/redeploy the MAUI app (Windows + Android) to pick up the new host address."
