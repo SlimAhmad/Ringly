@@ -150,6 +150,16 @@ public static class MauiProgram
         var androidAudioEndPoint = new Ringly.Samples.Maui.Platforms.Android.AndroidAudioEndPoint(androidAudioEncoder);
         builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSource>(androidAudioEndPoint);
         builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSink>(androidAudioEndPoint);
+
+        // Video counterpart — see AndroidVideoEndPoint.cs for why this repacks CameraX's
+        // YUV_420_888 planes into I420 instead of hand-rolling Camera2 directly. Registered the
+        // same way as the Windows video endpoint: a singleton under both IVideoSource/IVideoSink
+        // for SipSorceryCallClient's optional constructor parameters, plus its own concrete type
+        // so CallPage can resolve it directly to call AttachCameraView/DetachCameraView.
+        var androidVideoEndPoint = new Ringly.Samples.Maui.Platforms.Android.AndroidVideoEndPoint();
+        builder.Services.AddSingleton(androidVideoEndPoint);
+        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IVideoSource>(androidVideoEndPoint);
+        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IVideoSink>(androidVideoEndPoint);
 #endif
 
         builder.Services.AddSingleton<ICallClient, SipSorceryCallClient>();
