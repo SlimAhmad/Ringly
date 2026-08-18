@@ -110,6 +110,21 @@ public sealed class AndroidVideoEndPoint : IVideoSource, IVideoSink, IFrameAnaly
         }
     }
 
+    // CameraView's own Facing bindable property drives CameraViewHandler.Android's rebind
+    // internally (same MapFacing -> BindUseCases path confirmed via its real source) — just
+    // toggling it is enough, no manual stop/start needed here.
+    public Task SwitchCameraAsync()
+    {
+        if (this.attachedCameraView is not null)
+        {
+            this.attachedCameraView.Facing = this.attachedCameraView.Facing == CameraFacing.Back
+                ? CameraFacing.Front
+                : CameraFacing.Back;
+        }
+
+        return Task.CompletedTask;
+    }
+
     // IFrameAnalyzer
 
     public string Id => nameof(AndroidVideoEndPoint);
