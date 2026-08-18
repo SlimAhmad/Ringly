@@ -7,19 +7,16 @@ namespace Ringly.Asterisk.Tests.Acceptance.Brokers;
 
 public partial class AsteriskBrokerAcceptanceTests
 {
-    // AddSipEndpointConfigAsync writes aor -> auth -> endpoint (see AsteriskBroker.Credentials.cs).
-    // The endpoint step is currently blocked by a confirmed, still-open upstream Asterisk bug:
-    // res_config_pgsql never quotes SQL identifiers (https://github.com/asterisk/asterisk/issues/1655),
-    // and the "endpoint" sorcery object always includes columns like "100rel" that Postgres rejects
-    // as invalid unquoted identifiers — every realtime endpoint creation fails, regardless of what
-    // fields we send. There is no application-level workaround (confirmed on the upstream issue).
-    //
-    // aor and auth creation (few fields, no problematic names) DO work end-to-end once fixed —
-    // this test proves that real path (URL routing under /ari/, Newtonsoft-based field-name
-    // casing, {"fields": [...]} body wrapping, and "application/json" media type all confirmed
-    // against the live server) while documenting the endpoint blocker precisely.
+    // AddSipEndpointConfigAsync writes aor -> auth (ARI PUT) -> endpoint (direct Postgres INSERT,
+    // see AsteriskBroker.InsertSipEndpointObjectAsync). The endpoint step used to fail
+    // unconditionally via ARI's PUT — res_config_pgsql never quotes SQL identifiers like the
+    // column "100rel" (asterisk/asterisk#1655), a confirmed upstream bug with no
+    // application-level ARI-based workaround — fixed by writing directly into the same
+    // ps_endpoints table Asterisk's own realtime lookup reads from, bypassing that write path
+    // entirely. This test is the real regression guard for that fix: confirms all three objects
+    // now genuinely exist after a single Add call.
     [Fact]
-    public async Task ShouldPersistAorAndAuthButFailOnEndpointDueToKnownAsteriskPgsqlBugAsync()
+    public async Task ShouldAddSipEndpointConfigAsync()
     {
         // given
         string extension = CreateRandomExtension();
@@ -33,14 +30,9 @@ public partial class AsteriskBrokerAcceptanceTests
         try
         {
             // when
-            ValueTask addTask = this.sipEndpointConfigFoundationService.AddSipEndpointConfigAsync(inputConfig);
+            await this.sipEndpointConfigFoundationService.AddSipEndpointConfigAsync(inputConfig);
 
             // then
-            SipEndpointConfigDependencyException actualException =
-                await Assert.ThrowsAsync<SipEndpointConfigDependencyException>(addTask.AsTask);
-
-            actualException.Message.Should().NotBeNullOrEmpty();
-
             using HttpResponseMessage aorResponse =
                 await this.rawAriClient.GetAsync($"ari/asterisk/config/dynamic/res_pjsip/aor/{extension}");
 
@@ -52,10 +44,13 @@ public partial class AsteriskBrokerAcceptanceTests
 
             aorResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             authResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            endpointResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            endpointResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
             string authBody = await authResponse.Content.ReadAsStringAsync();
             authBody.Should().Contain(inputConfig.Password);
+
+            string endpointBody = await endpointResponse.Content.ReadAsStringAsync();
+            endpointBody.Should().Contain(extension);
         }
         finally
         {
@@ -83,20 +78,14 @@ public partial class AsteriskBrokerAcceptanceTests
 
         try
         {
-            // The first add still fails on the endpoint step (see above) but its aor/auth writes
-            // land first — enough for the pre-insert existence check (a GET on "aor") to see the
-            // extension as already provisioned on the second attempt.
-            ValueTask firstAddTask =
-                this.sipEndpointConfigFoundationService.AddSipEndpointConfigAsync(firstConfig);
-
-            await Assert.ThrowsAsync<SipEndpointConfigDependencyException>(firstAddTask.AsTask);
+            await this.sipEndpointConfigFoundationService.AddSipEndpointConfigAsync(firstConfig);
 
             // when
             ValueTask secondAddTask =
                 this.sipEndpointConfigFoundationService.AddSipEndpointConfigAsync(secondConfig);
 
             // then — proves Asterisk's real PUT semantics (silent upsert, no native 409) require
-            // our own pre-insert collision check; a naive re-PUT would otherwise have silently
+            // our own pre-insert collision check; a naive re-insert would otherwise have silently
             // overwritten the first registrant's password.
             SipEndpointConfigDependencyValidationException actualException =
                 await Assert.ThrowsAsync<SipEndpointConfigDependencyValidationException>(
@@ -117,9 +106,9 @@ public partial class AsteriskBrokerAcceptanceTests
         }
     }
 
-    // Confirms the real remove path end-to-end: aor/auth (the two objects Add can actually create
-    // today, see the endpoint blocker documented above) genuinely disappear from Asterisk's
-    // realtime config after RemoveSipEndpointConfigAsync, not just that the call doesn't throw.
+    // Confirms the real remove path end-to-end: all three objects (now that Add genuinely
+    // creates all three, including "endpoint") disappear from Asterisk's realtime config after
+    // RemoveSipEndpointConfigAsync.
     [Fact]
     public async Task ShouldRemoveSipEndpointConfigAsync()
     {
@@ -132,8 +121,7 @@ public partial class AsteriskBrokerAcceptanceTests
             Password = CreateRandomPassword()
         };
 
-        ValueTask addTask = this.sipEndpointConfigFoundationService.AddSipEndpointConfigAsync(inputConfig);
-        await Assert.ThrowsAsync<SipEndpointConfigDependencyException>(addTask.AsTask);
+        await this.sipEndpointConfigFoundationService.AddSipEndpointConfigAsync(inputConfig);
 
         // when
         await this.sipEndpointConfigFoundationService.RemoveSipEndpointConfigAsync(extension);
@@ -145,8 +133,12 @@ public partial class AsteriskBrokerAcceptanceTests
         using HttpResponseMessage authResponse =
             await this.rawAriClient.GetAsync($"ari/asterisk/config/dynamic/res_pjsip/auth/{extension}");
 
+        using HttpResponseMessage endpointResponse =
+            await this.rawAriClient.GetAsync($"ari/asterisk/config/dynamic/res_pjsip/endpoint/{extension}");
+
         aorResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         authResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        endpointResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]

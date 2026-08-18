@@ -1,3 +1,4 @@
+using Npgsql;
 using Ringly.Abstractions.Models;
 using Ringly.Asterisk.Models;
 
@@ -25,14 +26,57 @@ public partial class AsteriskBroker
             new ConfigTuple { Attribute = "password", Value = config.Password }
         ]);
 
-        await this.PutPjsipConfigAsync("endpoint", config.Extension,
-        [
-            new ConfigTuple { Attribute = "context", Value = this.asteriskOptions.DialplanContext },
-            new ConfigTuple { Attribute = "auth", Value = config.Extension },
-            new ConfigTuple { Attribute = "aors", Value = config.Extension },
-            new ConfigTuple { Attribute = "webrtc", Value = this.asteriskOptions.UseWebRtcTransport ? "yes" : "no" },
-            new ConfigTuple { Attribute = "set_var", Value = TransferHandlingSetVar }
-        ]);
+        await this.InsertSipEndpointObjectAsync(config);
+    }
+
+    // Direct Postgres write, bypassing ARI's PUT entirely for this one object type — confirmed
+    // via a real acceptance-test run that res_config_pgsql fails to quote SQL identifiers like
+    // the column "100rel" (asterisk/asterisk#1655), which makes ARI's dynamic-config PUT for
+    // "endpoint" fail unconditionally regardless of what fields are sent. Writes directly into
+    // the same ps_endpoints table Asterisk's own realtime lookup reads from — same technique
+    // docker/asterisk/seed-test-endpoint.sql already uses for local-dev seeding, now the real
+    // production path. Column list matches that seed script's full working set (aor/auth's ARI
+    // PUTs above don't hit this bug, so they're untouched).
+    private async ValueTask InsertSipEndpointObjectAsync(SipEndpointConfig config)
+    {
+        await using var connection = new NpgsqlConnection(this.asteriskOptions.DatabaseConnectionString);
+        await connection.OpenAsync();
+
+        // webrtc/rewrite_contact are the Asterisk realtime schema's custom "ast_bool_values"
+        // domain type, not plain text — confirmed live that Npgsql sending them as an ordinary
+        // parameterized text value (its default for a C# string) fails with "column is of type
+        // ast_bool_values but expression is of type text". The seed script's raw SQL literals
+        // don't hit this since Postgres implicitly coerces string literals, but parameters carry
+        // an explicit type OID that blocks the same implicit coercion — casting the parameter
+        // itself in the query text is the standard fix without registering the domain type with
+        // Npgsql.
+        await using var command = new NpgsqlCommand(
+            """
+            INSERT INTO ps_endpoints (id, context, disallow, allow, auth, aors, webrtc, rewrite_contact, set_var)
+            VALUES (@id, @context, @disallow, @allow, @auth, @aors, @webrtc::ast_bool_values, @rewrite_contact::ast_bool_values, @set_var)
+            ON CONFLICT (id) DO UPDATE SET
+                context = EXCLUDED.context,
+                disallow = EXCLUDED.disallow,
+                allow = EXCLUDED.allow,
+                auth = EXCLUDED.auth,
+                aors = EXCLUDED.aors,
+                webrtc = EXCLUDED.webrtc,
+                rewrite_contact = EXCLUDED.rewrite_contact,
+                set_var = EXCLUDED.set_var
+            """,
+            connection);
+
+        command.Parameters.AddWithValue("id", config.Extension);
+        command.Parameters.AddWithValue("context", this.asteriskOptions.DialplanContext);
+        command.Parameters.AddWithValue("disallow", "all");
+        command.Parameters.AddWithValue("allow", "opus,ulaw");
+        command.Parameters.AddWithValue("auth", config.Extension);
+        command.Parameters.AddWithValue("aors", config.Extension);
+        command.Parameters.AddWithValue("webrtc", this.asteriskOptions.UseWebRtcTransport ? "yes" : "no");
+        command.Parameters.AddWithValue("rewrite_contact", "yes");
+        command.Parameters.AddWithValue("set_var", TransferHandlingSetVar);
+
+        await command.ExecuteNonQueryAsync();
     }
 
     // Confirmed working against real ARI: unlike the PUT/insert path, which is blocked for the

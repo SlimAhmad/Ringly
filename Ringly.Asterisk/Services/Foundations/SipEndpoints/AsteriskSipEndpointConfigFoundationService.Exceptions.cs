@@ -1,3 +1,4 @@
+using Npgsql;
 using Ringly.Asterisk.Models.Foundations.SipEndpoints.Exceptions;
 using RESTFulSense.Exceptions;
 using Xeptions;
@@ -65,6 +66,17 @@ public partial class AsteriskSipEndpointConfigFoundationService
         {
             var failedAsteriskSipEndpointConfigDependencyException =
                 new FailedAsteriskSipEndpointConfigDependencyException(httpRequestException);
+
+            throw await CreateAndLogCriticalDependencyException(failedAsteriskSipEndpointConfigDependencyException);
+        }
+        // The direct-SQL write for "endpoint" (see AsteriskBroker.InsertSipEndpointObjectAsync)
+        // uses an upsert, so a real NpgsqlException here means something structurally wrong
+        // (unreachable DB, bad credentials, schema mismatch) rather than an ordinary data
+        // conflict — treated as critical, same as HttpRequestException above.
+        catch (NpgsqlException npgsqlException)
+        {
+            var failedAsteriskSipEndpointConfigDependencyException =
+                new FailedAsteriskSipEndpointConfigDependencyException(npgsqlException);
 
             throw await CreateAndLogCriticalDependencyException(failedAsteriskSipEndpointConfigDependencyException);
         }
