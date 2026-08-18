@@ -11,4 +11,7 @@ public interface ISipCredentialsStore
     // (e.g. IMaskingSessionStore, row #26): the store reports absence, the calling foundation
     // service decides what that means and throws its own domain exception.
     ValueTask<SipCredentials?> RetrieveByClientIdAsync(Guid clientId);
+
+    ValueTask AddAsync(SipCredentials credentials);
+    ValueTask RemoveByClientIdAsync(Guid clientId);
 }
