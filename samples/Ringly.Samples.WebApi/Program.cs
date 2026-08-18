@@ -11,6 +11,7 @@ using Ringly.Samples.WebApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 // Matches docker/asterisk/config/ari.conf's dev credentials exactly — this sample works
@@ -32,6 +33,7 @@ builder.Services.AddScoped<IAsteriskSipEndpointConfigFoundationService, Asterisk
 builder.Services.AddScoped<ICallProvisioningService, CallProvisioningService>();
 builder.Services.AddScoped<ICallProvider, AsteriskCallFoundationService>();
 builder.Services.AddScoped<ICallCenterProvider, AsteriskCallCenterFoundationService>();
+builder.Services.AddScoped<ClientCredentialsService>();
 
 // Bridges calls a client dials directly (not just server-originated ones via /calls) — see
 // RideHailingCallRouter's own comment for why this is needed.
@@ -44,18 +46,10 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-// Walks through the same flow as docs/getting-started.md, as real HTTP endpoints.
+app.MapControllers();
 
-app.MapPost("/clients/{clientId:guid}/provision", async (
-    Guid clientId,
-    ICallProvisioningService provisioningService,
-    InMemorySipCredentialsStore credentialsStore) =>
-{
-    SipCredentials credentials = await provisioningService.AddClientCredentialsAsync(clientId);
-    await credentialsStore.AddAsync(credentials);
-    return Results.Ok(credentials);
-})
-.WithName("ProvisionClient");
+// Walks through the same flow as docs/getting-started.md, as real HTTP endpoints. Client
+// credentials (add/retrieve/remove) are now ClientsController — see Controllers/.
 
 app.MapPost("/queues", async (CreateQueueRequest request, ICallCenterProvider callCenterProvider) =>
 {
