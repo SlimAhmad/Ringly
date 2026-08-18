@@ -76,6 +76,8 @@ public partial class CallPage : ContentPage
             this.androidVideoEndPoint.DecodedFrameReady += this.OnDecodedFrameReady;
         }
 
+        this.SwitchCameraButtonContainer.IsVisible = this.androidVideoEndPoint is not null;
+
         // AndroidAudioEndPoint's AudioRecord silently fails to initialize without this — Android
         // 6+ requires an explicit runtime grant even though RECORD_AUDIO is declared in the
         // manifest. Requested once up front here rather than deferred until the first call, so a
@@ -351,6 +353,29 @@ public partial class CallPage : ContentPage
         catch (Exception exception)
         {
             this.eventLog.Insert(0, $"{DateTimeOffset.Now:HH:mm:ss} Video toggle failed: {exception.Message}");
+        }
+    }
+
+    // Always compiled (not #if ANDROID) so the XAML button's Clicked handler resolves on every
+    // platform — androidVideoEndPoint is simply null on Windows, matching the same
+    // null-check-and-no-op pattern used throughout this file for platform-specific endpoints.
+    // The button itself is only made visible on Android (see OnAppearing/ShowSetup).
+    private async void OnSwitchCameraClicked(object? sender, EventArgs e)
+    {
+        try
+        {
+#if ANDROID
+            if (this.androidVideoEndPoint is not null)
+            {
+                await this.androidVideoEndPoint.SwitchCameraAsync();
+            }
+#else
+            await Task.CompletedTask;
+#endif
+        }
+        catch (Exception exception)
+        {
+            this.eventLog.Insert(0, $"{DateTimeOffset.Now:HH:mm:ss} Camera switch failed: {exception.Message}");
         }
     }
 

@@ -54,6 +54,7 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
     private bool isSourcePaused;
     private bool isSinkPaused;
     private bool hasLoggedFirstAnalyzeCall;
+    private bool isUsingFrontCamera;
 
     private int framesEncodedSinceLog;
     private int framesSkippedSinceLog;
@@ -86,6 +87,19 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
 
     public void DetachCameraView()
     {
+    }
+
+    // Toggles front/back and rebinds while the camera is already running (BindCameraAsync's own
+    // "cameraProvider.UnbindAll()" call handles switching cleanly — CameraX requires the previous
+    // binding torn down before a different CameraSelector can bind). A no-op if the camera hasn't
+    // started yet (StartVideo will pick up isUsingFrontCamera's current value when it does).
+    public Task SwitchCameraAsync()
+    {
+        this.isUsingFrontCamera = !this.isUsingFrontCamera;
+
+        return this.cameraProvider is null
+            ? Task.CompletedTask
+            : MainThread.InvokeOnMainThreadAsync(this.BindCameraAsync);
     }
 
     // IVideoSource
@@ -169,13 +183,15 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
                 this.imageAnalysis!.SetAnalyzer(this.analysisExecutor!, new NativeFrameAnalyzer(this));
 
                 var selector = new CameraSelector.Builder()
-                    .RequireLensFacing(CameraSelector.LensFacingBack)!
+                    .RequireLensFacing(this.isUsingFrontCamera ? CameraSelector.LensFacingFront : CameraSelector.LensFacingBack)!
                     .Build();
 
                 this.cameraProvider.UnbindAll();
                 this.cameraProvider.BindToLifecycle(this.lifecycleOwner, selector, this.imageAnalysis);
 
-                Logger.LogInformation("CameraX bound directly (no Shiny) — ImageAnalysis use case active.");
+                Logger.LogInformation(
+                    "CameraX bound directly (no Shiny) — ImageAnalysis use case active, facing {Facing}.",
+                    this.isUsingFrontCamera ? "front" : "back");
                 bindCompletionSource.TrySetResult();
             }
             catch (Exception exception)

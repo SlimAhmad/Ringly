@@ -113,6 +113,15 @@
                             WidthRequest="56" HeightRequest="56" CornerRadius="28" />
                     <Label Text="Video" FontSize="12" TextColor="#9AA0B4" HorizontalOptions="Center" />
                 </VerticalStackLayout>
+
+                <!-- Android only (no front/back concept on a single-camera Windows machine) —
+                     made visible from code-behind, see OnAppearing. -->
+                <VerticalStackLayout x:Name="SwitchCameraButtonContainer" Spacing="6" IsVisible="False">
+                    <Button x:Name="SwitchCameraButton" Text="🔄" FontSize="20" Clicked="OnSwitchCameraClicked"
+                            BackgroundColor="#2A2E3F" TextColor="White"
+                            WidthRequest="56" HeightRequest="56" CornerRadius="28" />
+                    <Label Text="Flip" FontSize="12" TextColor="#9AA0B4" HorizontalOptions="Center" />
+                </VerticalStackLayout>
             </HorizontalStackLayout>
 
             <!-- Outgoing/dialing controls: just End, before the far side answers. -->

@@ -17,5 +17,7 @@ public interface IAndroidVideoCaptureEndPoint
 
     void DetachCameraView();
 
+    Task SwitchCameraAsync();
+
     event Action<int, int, byte[]>? DecodedFrameReady;
 }
