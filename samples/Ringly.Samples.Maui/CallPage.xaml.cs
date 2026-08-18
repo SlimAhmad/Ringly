@@ -18,7 +18,20 @@ public partial class CallPage : ContentPage
     private DateTimeOffset callAnsweredAt;
     private bool isMuted;
     private bool isSpeakerOn;
+    private bool isVideoMuted;
 
+#if WINDOWS
+    private readonly Platforms.Windows.CustomWindowsVideoEndPoint? windowsVideoEndPoint;
+
+    public CallPage(ICallClient callClient, IAudioManager audioManager, Platforms.Windows.CustomWindowsVideoEndPoint windowsVideoEndPoint)
+    {
+        InitializeComponent();
+        this.callClient = callClient;
+        this.audioManager = audioManager;
+        this.windowsVideoEndPoint = windowsVideoEndPoint;
+        this.EventLogView.ItemsSource = this.eventLog;
+    }
+#else
     public CallPage(ICallClient callClient, IAudioManager audioManager)
     {
         InitializeComponent();
@@ -26,6 +39,7 @@ public partial class CallPage : ContentPage
         this.audioManager = audioManager;
         this.EventLogView.ItemsSource = this.eventLog;
     }
+#endif
 
     protected override async void OnAppearing()
     {
@@ -33,6 +47,14 @@ public partial class CallPage : ContentPage
 
         this.eventSubscription = this.callClient.StreamEvents().Subscribe(callEvent =>
             this.Dispatcher.Dispatch(() => this.HandleCallEvent(callEvent)));
+
+#if WINDOWS
+        if (this.windowsVideoEndPoint is not null)
+        {
+            this.windowsVideoEndPoint.AttachCameraView(this.LocalCameraView);
+            this.windowsVideoEndPoint.DecodedFrameReady += this.OnDecodedFrameReady;
+        }
+#endif
 
 #if ANDROID
         // AndroidAudioEndPoint's AudioRecord silently fails to initialize without this — Android
@@ -55,7 +77,64 @@ public partial class CallPage : ContentPage
         this.eventSubscription?.Dispose();
         this.StopCallTimer();
         this.StopTone();
+
+#if WINDOWS
+        if (this.windowsVideoEndPoint is not null)
+        {
+            this.windowsVideoEndPoint.DecodedFrameReady -= this.OnDecodedFrameReady;
+            this.windowsVideoEndPoint.DetachCameraView();
+        }
+#endif
     }
+
+#if WINDOWS
+    // Runs off the capture/decode thread — marshal to the UI thread before touching
+    // RemoteVideoImage, same as HandleCallEvent's Dispatcher.Dispatch above.
+    private void OnDecodedFrameReady(int width, int height, byte[] bgrSample)
+    {
+        byte[] bitmap = BuildBottomUpBitmap(width, height, bgrSample);
+
+        this.Dispatcher.Dispatch(() =>
+        {
+            this.RemoteVideoImage.Source = ImageSource.FromStream(() => new MemoryStream(bitmap));
+            this.RemoteVideoImage.IsVisible = true;
+        });
+    }
+
+    // Wraps a raw top-down BGR24 buffer (VP8Codec.DecodeVideo's output format — confirmed via
+    // its "Bgr" pixel format request in CustomWindowsVideoEndPoint.GotVideoFrame) in a minimal
+    // 24bpp BMP container so ImageSource.FromStream can decode it via Windows' built-in BMP
+    // support, without pulling in an imaging library just to preview raw decoded frames. Declares
+    // a negative height (a standard BITMAPINFOHEADER top-down flag) so rows can be copied
+    // straight across instead of manually reversed.
+    private static byte[] BuildBottomUpBitmap(int width, int height, byte[] bgr)
+    {
+        int rowSize = ((width * 3) + 3) / 4 * 4; // BMP rows are padded to a multiple of 4 bytes
+        int pixelDataSize = rowSize * height;
+        int fileSize = 54 + pixelDataSize;
+
+        var bitmap = new byte[fileSize];
+        bitmap[0] = (byte)'B';
+        bitmap[1] = (byte)'M';
+        BitConverter.GetBytes(fileSize).CopyTo(bitmap, 2);
+        BitConverter.GetBytes(54).CopyTo(bitmap, 10); // pixel data offset
+        BitConverter.GetBytes(40).CopyTo(bitmap, 14); // DIB header size (BITMAPINFOHEADER)
+        BitConverter.GetBytes(width).CopyTo(bitmap, 18);
+        BitConverter.GetBytes(-height).CopyTo(bitmap, 22); // negative = top-down rows
+        BitConverter.GetBytes((short)1).CopyTo(bitmap, 26); // color planes
+        BitConverter.GetBytes((short)24).CopyTo(bitmap, 28); // bits per pixel
+        BitConverter.GetBytes(pixelDataSize).CopyTo(bitmap, 34);
+
+        for (int row = 0; row < height; row++)
+        {
+            int sourceRowStart = row * width * 3;
+            int destinationRowStart = 54 + (row * rowSize);
+            Array.Copy(bgr, sourceRowStart, bitmap, destinationRowStart, width * 3);
+        }
+
+        return bitmap;
+    }
+#endif
 
     private void HandleCallEvent(CallClientEvent callEvent)
     {
@@ -213,6 +292,30 @@ public partial class CallPage : ContentPage
         }
     }
 
+    private async void OnVideoClicked(object? sender, EventArgs e)
+    {
+        try
+        {
+            if (this.isVideoMuted)
+            {
+                await this.callClient.UnmuteVideoAsync();
+            }
+            else
+            {
+                await this.callClient.MuteVideoAsync();
+            }
+
+            this.isVideoMuted = !this.isVideoMuted;
+            this.VideoButton.Text = this.isVideoMuted ? "🚫" : "📷";
+            this.VideoButton.BackgroundColor = this.isVideoMuted ? Color.FromArgb("#2A2E3F") : Color.FromArgb("#5B4CE0");
+            this.LocalCameraView.IsVisible = !this.isVideoMuted;
+        }
+        catch (Exception exception)
+        {
+            this.eventLog.Insert(0, $"{DateTimeOffset.Now:HH:mm:ss} Video toggle failed: {exception.Message}");
+        }
+    }
+
     private void OnSpeakerClicked(object? sender, EventArgs e)
     {
         // UI-only toggle — SIPSorceryMedia.Windows's WindowsAudioEndPoint has no
@@ -233,6 +336,12 @@ public partial class CallPage : ContentPage
         this.CallFailedLabel.IsVisible = false;
         this.isMuted = false;
         this.isSpeakerOn = false;
+        this.isVideoMuted = false;
+        this.RemoteVideoImage.IsVisible = false;
+        this.RemoteVideoImage.Source = null;
+        this.LocalCameraView.IsVisible = false;
+        this.VideoButton.Text = "📷";
+        this.VideoButton.BackgroundColor = Color.FromArgb("#2A2E3F");
     }
 
     private void ShowDialing(string targetExtension)
@@ -284,6 +393,10 @@ public partial class CallPage : ContentPage
         this.DialingButtons.IsVisible = false;
         this.IncomingCallButtons.IsVisible = false;
         this.ActiveCallButtons.IsVisible = true;
+
+#if WINDOWS
+        this.LocalCameraView.IsVisible = this.windowsVideoEndPoint is not null;
+#endif
 
         this.StartCallTimer();
     }

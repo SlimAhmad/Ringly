@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:camera="clr-namespace:Shiny.Maui.Controls.Camera;assembly=Shiny.Maui.Controls.Camera"
              x:Class="Ringly.Samples.Maui.CallPage"
              Title="Ringly Call Sample"
              BackgroundColor="#12141C">
@@ -52,20 +53,35 @@
         <!-- In-call overlay: covers the whole page while ringing, dialing, incoming, or connected. -->
         <Grid x:Name="InCallView" IsVisible="False" BackgroundColor="#171A26" RowDefinitions="*,Auto,Auto,Auto,60">
 
-            <VerticalStackLayout Grid.Row="0" VerticalOptions="Center" Spacing="16">
-                <Border StrokeShape="RoundRectangle 60" BackgroundColor="#5B4CE0"
-                        WidthRequest="120" HeightRequest="120" HorizontalOptions="Center">
-                    <Label x:Name="CallAvatarLabel" Text="?" FontSize="40" FontAttributes="Bold"
-                           TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" />
-                </Border>
+            <Grid Grid.Row="0">
 
-                <Label x:Name="CallStateLabel" Text="Calling"
-                       FontSize="14" TextColor="#9AA0B4" HorizontalOptions="Center" />
-                <Label x:Name="CallTargetLabel" Text=""
-                       FontSize="26" FontAttributes="Bold" TextColor="White" HorizontalOptions="Center" />
-                <Label x:Name="CallTimerLabel" Text="" IsVisible="False"
-                       FontSize="16" TextColor="#4CD97B" HorizontalOptions="Center" />
-            </VerticalStackLayout>
+                <!-- Remote party's decoded video, filling the call screen once frames start
+                     arriving (see CallPage.xaml.cs's OnDecodedFrameReady). Hidden until then, so
+                     an audio-only call still just shows the avatar as before. -->
+                <Image x:Name="RemoteVideoImage" Aspect="AspectFill" IsVisible="False" />
+
+                <!-- Local camera self-view (picture-in-picture) — CameraView is Shiny's own
+                     preview surface, so it renders the live feed itself once a platform video
+                     endpoint attaches to it (currently Windows only; see CallPage.xaml.cs). -->
+                <camera:CameraView x:Name="LocalCameraView" IsVisible="False"
+                                    WidthRequest="110" HeightRequest="150"
+                                    HorizontalOptions="End" VerticalOptions="Start" Margin="16" />
+
+                <VerticalStackLayout VerticalOptions="Center" Spacing="16">
+                    <Border StrokeShape="RoundRectangle 60" BackgroundColor="#5B4CE0"
+                            WidthRequest="120" HeightRequest="120" HorizontalOptions="Center">
+                        <Label x:Name="CallAvatarLabel" Text="?" FontSize="40" FontAttributes="Bold"
+                               TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" />
+                    </Border>
+
+                    <Label x:Name="CallStateLabel" Text="Calling"
+                           FontSize="14" TextColor="#9AA0B4" HorizontalOptions="Center" />
+                    <Label x:Name="CallTargetLabel" Text=""
+                           FontSize="26" FontAttributes="Bold" TextColor="White" HorizontalOptions="Center" />
+                    <Label x:Name="CallTimerLabel" Text="" IsVisible="False"
+                           FontSize="16" TextColor="#4CD97B" HorizontalOptions="Center" />
+                </VerticalStackLayout>
+            </Grid>
 
             <!-- Active-call controls: Speaker / End / Mute. -->
             <HorizontalStackLayout x:Name="ActiveCallButtons" Grid.Row="2" IsVisible="False"
@@ -89,6 +105,13 @@
                             BackgroundColor="#2A2E3F" TextColor="White"
                             WidthRequest="56" HeightRequest="56" CornerRadius="28" />
                     <Label Text="Mute" FontSize="12" TextColor="#9AA0B4" HorizontalOptions="Center" />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Spacing="6">
+                    <Button x:Name="VideoButton" Text="📷" FontSize="20" Clicked="OnVideoClicked"
+                            BackgroundColor="#2A2E3F" TextColor="White"
+                            WidthRequest="56" HeightRequest="56" CornerRadius="28" />
+                    <Label Text="Video" FontSize="12" TextColor="#9AA0B4" HorizontalOptions="Center" />
                 </VerticalStackLayout>
             </HorizontalStackLayout>
 
