@@ -18,13 +18,16 @@
 -- remove_existing=yes makes a new registration replace the old one instead of being
 -- rejected — the correct behavior for an AOR that only ever has one real device using it.
 INSERT INTO ps_aors (id, max_contacts, remove_existing)
-VALUES ('1000', 1, 'yes'), ('1001', 1, 'yes')
+VALUES ('1000', 1, 'yes'), ('1001', 1, 'yes'), ('1002', 1, 'yes'), ('1003', 1, 'yes'), ('1004', 1, 'yes')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO ps_auths (id, auth_type, username, password)
 VALUES
     ('1000', 'userpass', '1000', 'ringly-dev-1000'),
-    ('1001', 'userpass', '1001', 'ringly-dev-1001')
+    ('1001', 'userpass', '1001', 'ringly-dev-1001'),
+    ('1002', 'userpass', '1002', 'ringly-dev-1002'),
+    ('1003', 'userpass', '1003', 'ringly-dev-1003'),
+    ('1004', 'userpass', '1004', 'ringly-dev-1004')
 ON CONFLICT (id) DO NOTHING;
 
 -- rewrite_contact is essential here: Asterisk runs inside the Docker container's own
@@ -45,5 +48,11 @@ VALUES
     ('1000', 'ride_hailing', 'all', 'opus,ulaw', '1000', '1000', 'yes', 'yes',
      'PJSIP_TRANSFER_HANDLING()=ari-only'),
     ('1001', 'ride_hailing', 'all', 'opus,ulaw', '1001', '1001', 'yes', 'yes',
+     'PJSIP_TRANSFER_HANDLING()=ari-only'),
+    ('1002', 'ride_hailing', 'all', 'opus,ulaw', '1002', '1002', 'yes', 'yes',
+     'PJSIP_TRANSFER_HANDLING()=ari-only'),
+    ('1003', 'ride_hailing', 'all', 'opus,ulaw', '1003', '1003', 'yes', 'yes',
+     'PJSIP_TRANSFER_HANDLING()=ari-only'),
+    ('1004', 'ride_hailing', 'all', 'opus,ulaw', '1004', '1004', 'yes', 'yes',
      'PJSIP_TRANSFER_HANDLING()=ari-only')
 ON CONFLICT (id) DO NOTHING;
