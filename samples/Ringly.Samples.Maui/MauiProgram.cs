@@ -83,6 +83,17 @@ public static class MauiProgram
             options.IceServerUrls = [$"turn:{host}:3478"];
             options.IceServerUsername = "ringly";
             options.IceServerCredential = "ringly-dev-turn";
+
+#if WINDOWS
+            // Confirmed live: this machine's Docker Desktop WSL2 bridge adapter shares a subnet
+            // with this project's own docker-compose network (172.22.0.0/16) purely by
+            // coincidence — without binding explicitly, ICE gathered (and the remote peer
+            // nominated) a host candidate on that virtual, Windows-host-only adapter instead of
+            // the real Wi-Fi one, causing a DTLS handshake timeout with no error until then. See
+            // SipSorceryCallOptions.BindAddress's own comment for the full story. Android doesn't
+            // need this — it has no Docker/WSL virtual adapters of its own to be confused by.
+            options.BindAddress = CurrentLanHostAddress;
+#endif
         });
 
 #if WINDOWS

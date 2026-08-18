@@ -83,7 +83,16 @@ public class SipSorceryCallClient : ICallClient, IDisposable
                     credential = this.options.IceServerCredential,
                     credentialType = RTCIceCredentialType.password
                 })
-                .ToList()
+                .ToList(),
+
+            // See SipSorceryCallOptions.BindAddress's own comment for why this is needed — without
+            // it, ICE can gather and the remote peer can nominate a host candidate on a
+            // Windows-host-only virtual adapter (e.g. Docker Desktop's WSL2 bridge) that happens to
+            // share a subnet with this project's own docker-compose network, silently timing out
+            // DTLS since nothing on the other device can ever reach it.
+            X_BindAddress = string.IsNullOrWhiteSpace(this.options.BindAddress)
+                ? null
+                : System.Net.IPAddress.Parse(this.options.BindAddress)
 
             // NOTE: forcing iceTransportPolicy = relay was tried here to work around a direct
             // host/peer-reflexive ICE pair silently carrying zero real media despite reporting
