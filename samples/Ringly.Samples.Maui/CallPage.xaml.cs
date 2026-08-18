@@ -31,6 +31,17 @@ public partial class CallPage : ContentPage
         this.windowsVideoEndPoint = windowsVideoEndPoint;
         this.EventLogView.ItemsSource = this.eventLog;
     }
+#elif ANDROID
+    private readonly Platforms.Android.AndroidVideoEndPoint? androidVideoEndPoint;
+
+    public CallPage(ICallClient callClient, IAudioManager audioManager, Platforms.Android.AndroidVideoEndPoint androidVideoEndPoint)
+    {
+        InitializeComponent();
+        this.callClient = callClient;
+        this.audioManager = audioManager;
+        this.androidVideoEndPoint = androidVideoEndPoint;
+        this.EventLogView.ItemsSource = this.eventLog;
+    }
 #else
     public CallPage(ICallClient callClient, IAudioManager audioManager)
     {
@@ -54,9 +65,13 @@ public partial class CallPage : ContentPage
             this.windowsVideoEndPoint.AttachCameraView(this.LocalCameraView);
             this.windowsVideoEndPoint.DecodedFrameReady += this.OnDecodedFrameReady;
         }
-#endif
+#elif ANDROID
+        if (this.androidVideoEndPoint is not null)
+        {
+            this.androidVideoEndPoint.AttachCameraView(this.LocalCameraView);
+            this.androidVideoEndPoint.DecodedFrameReady += this.OnDecodedFrameReady;
+        }
 
-#if ANDROID
         // AndroidAudioEndPoint's AudioRecord silently fails to initialize without this — Android
         // 6+ requires an explicit runtime grant even though RECORD_AUDIO is declared in the
         // manifest. Requested once up front here rather than deferred until the first call, so a
@@ -67,6 +82,17 @@ public partial class CallPage : ContentPage
         {
             this.eventLog.Insert(0,
                 $"{DateTimeOffset.Now:HH:mm:ss} Microphone permission denied — calls will have no audio.");
+        }
+
+        // Camera capture needs the same kind of explicit runtime grant as the microphone above —
+        // requested once up front for the same reason (a denial should surface immediately, not
+        // as a confusing silent "no video" once a call actually starts).
+        PermissionStatus cameraStatus = await Permissions.RequestAsync<Permissions.Camera>();
+
+        if (cameraStatus != PermissionStatus.Granted)
+        {
+            this.eventLog.Insert(0,
+                $"{DateTimeOffset.Now:HH:mm:ss} Camera permission denied — calls will have no outgoing video.");
         }
 #endif
     }
@@ -84,15 +110,21 @@ public partial class CallPage : ContentPage
             this.windowsVideoEndPoint.DecodedFrameReady -= this.OnDecodedFrameReady;
             this.windowsVideoEndPoint.DetachCameraView();
         }
+#elif ANDROID
+        if (this.androidVideoEndPoint is not null)
+        {
+            this.androidVideoEndPoint.DecodedFrameReady -= this.OnDecodedFrameReady;
+            this.androidVideoEndPoint.DetachCameraView();
+        }
 #endif
     }
 
-#if WINDOWS
+#if WINDOWS || ANDROID
     // Runs off the capture/decode thread — marshal to the UI thread before touching
     // RemoteVideoImage, same as HandleCallEvent's Dispatcher.Dispatch above.
     private void OnDecodedFrameReady(int width, int height, byte[] bgrSample)
     {
-        byte[] bitmap = BuildBottomUpBitmap(width, height, bgrSample);
+        byte[] bitmap = BuildBitmap(width, height, bgrSample);
 
         this.Dispatcher.Dispatch(() =>
         {
@@ -101,13 +133,15 @@ public partial class CallPage : ContentPage
         });
     }
 
-    // Wraps a raw top-down BGR24 buffer (VP8Codec.DecodeVideo's output format — confirmed via
-    // its "Bgr" pixel format request in CustomWindowsVideoEndPoint.GotVideoFrame) in a minimal
-    // 24bpp BMP container so ImageSource.FromStream can decode it via Windows' built-in BMP
-    // support, without pulling in an imaging library just to preview raw decoded frames. Declares
-    // a negative height (a standard BITMAPINFOHEADER top-down flag) so rows can be copied
-    // straight across instead of manually reversed.
-    private static byte[] BuildBottomUpBitmap(int width, int height, byte[] bgr)
+    // Wraps a raw BGR24 buffer (VP8Codec.DecodeVideo's output format — confirmed via the "Bgr"
+    // pixel format both CustomWindowsVideoEndPoint and AndroidVideoEndPoint request in
+    // GotVideoFrame) in a minimal 24bpp BMP container so ImageSource.FromStream can decode it via
+    // each platform's own built-in BMP support, without pulling in an imaging library just to
+    // preview raw decoded frames. Stores rows bottom-up (BMP's canonical, universally-supported
+    // layout — a negative-height top-down header is a Windows-only convenience some decoders,
+    // including Android's, don't reliably honor), so rows are written in reverse order rather
+    // than copied straight across.
+    private static byte[] BuildBitmap(int width, int height, byte[] bgr)
     {
         int rowSize = ((width * 3) + 3) / 4 * 4; // BMP rows are padded to a multiple of 4 bytes
         int pixelDataSize = rowSize * height;
@@ -120,7 +154,7 @@ public partial class CallPage : ContentPage
         BitConverter.GetBytes(54).CopyTo(bitmap, 10); // pixel data offset
         BitConverter.GetBytes(40).CopyTo(bitmap, 14); // DIB header size (BITMAPINFOHEADER)
         BitConverter.GetBytes(width).CopyTo(bitmap, 18);
-        BitConverter.GetBytes(-height).CopyTo(bitmap, 22); // negative = top-down rows
+        BitConverter.GetBytes(height).CopyTo(bitmap, 22); // positive = bottom-up rows
         BitConverter.GetBytes((short)1).CopyTo(bitmap, 26); // color planes
         BitConverter.GetBytes((short)24).CopyTo(bitmap, 28); // bits per pixel
         BitConverter.GetBytes(pixelDataSize).CopyTo(bitmap, 34);
@@ -128,7 +162,7 @@ public partial class CallPage : ContentPage
         for (int row = 0; row < height; row++)
         {
             int sourceRowStart = row * width * 3;
-            int destinationRowStart = 54 + (row * rowSize);
+            int destinationRowStart = 54 + ((height - 1 - row) * rowSize);
             Array.Copy(bgr, sourceRowStart, bitmap, destinationRowStart, width * 3);
         }
 
@@ -396,6 +430,8 @@ public partial class CallPage : ContentPage
 
 #if WINDOWS
         this.LocalCameraView.IsVisible = this.windowsVideoEndPoint is not null;
+#elif ANDROID
+        this.LocalCameraView.IsVisible = this.androidVideoEndPoint is not null;
 #endif
 
         this.StartCallTimer();
