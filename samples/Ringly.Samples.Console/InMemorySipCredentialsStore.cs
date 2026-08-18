@@ -11,9 +11,18 @@ public class InMemorySipCredentialsStore : ISipCredentialsStore
 {
     private readonly ConcurrentDictionary<Guid, SipCredentials> credentials = new();
 
-    public void Add(SipCredentials sipCredentials) =>
-        this.credentials[sipCredentials.ClientId] = sipCredentials;
+    public ValueTask AddAsync(SipCredentials credentials)
+    {
+        this.credentials[credentials.ClientId] = credentials;
+        return ValueTask.CompletedTask;
+    }
 
     public ValueTask<SipCredentials?> RetrieveByClientIdAsync(Guid clientId) =>
         ValueTask.FromResult(this.credentials.GetValueOrDefault(clientId));
+
+    public ValueTask RemoveByClientIdAsync(Guid clientId)
+    {
+        this.credentials.TryRemove(clientId, out _);
+        return ValueTask.CompletedTask;
+    }
 }
