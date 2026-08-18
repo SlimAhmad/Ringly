@@ -8,6 +8,11 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
+    <!-- Controllers inherit RESTFulSense.Controllers.RESTFulController for the
+         Ok/Created/BadRequest/NotFound/InternalServerError helpers — house convention, matching
+         RESTFulSense's use elsewhere in Ringly (as an HTTP client wrapper for brokers) and other
+         Standard-based API projects. -->
+    <PackageReference Include="RESTFulSense" Version="3.2.0" />
   </ItemGroup>
 
   <ItemGroup>
