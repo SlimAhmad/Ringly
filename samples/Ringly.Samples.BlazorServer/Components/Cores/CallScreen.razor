@@ -1,0 +1,108 @@
+@* Core Component — integrates with exactly one view service (ICallViewService), per
+   the-standard-architecture's UI rules. All call-flow state and logic live in the view service;
+   this file only renders and delegates user actions to it. Code lives in CallScreen.razor.cs,
+   not an inline @code block, to keep markup and code separated. Styling uses Tailwind utility
+   classes directly in markup rather than a component-scoped .css file — Tailwind's utility-first
+   model is inherently markup-embedded, so this is where its styling lives by design. *@
+@using Ringly.Samples.BlazorServer.Components.Bases
+@using Ringly.Samples.BlazorServer.Models.Calls
+@using Ringly.Samples.BlazorServer.ViewServices.Calls
+@implements IDisposable
+
+<div class="mx-auto flex min-h-screen max-w-md flex-col gap-6 p-6">
+    <h1 class="text-xl font-semibold text-slate-100">Ringly — Blazor Server</h1>
+
+    @if (this.ViewService.State == CallScreenState.Setup)
+    {
+        <section class="flex flex-col gap-3 rounded-xl bg-slate-900 p-4">
+            <h2 class="text-sm font-medium text-slate-400">Register</h2>
+            <AppTextInput CssClass="rounded-lg bg-slate-800 px-3 py-2 text-slate-100 placeholder-slate-500"
+                          Placeholder="Extension (e.g. 1000)"
+                          Value="@this.ViewService.Extension"
+                          ValueChanged="@(value => this.ViewService.Extension = value)" />
+            <AppTextInput CssClass="rounded-lg bg-slate-800 px-3 py-2 text-slate-100 placeholder-slate-500"
+                          Placeholder="Password" Type="password"
+                          Value="@this.ViewService.Password"
+                          ValueChanged="@(value => this.ViewService.Password = value)" />
+            <AppButton CssClass="rounded-lg bg-indigo-600 px-3 py-2 font-medium text-white hover:bg-indigo-500"
+                       OnClick="@this.OnRegisterClickedAsync">
+                Register
+            </AppButton>
+            <p class="text-sm @this.ViewService.RegistrationStatusColorClass">@this.ViewService.RegistrationStatus</p>
+        </section>
+
+        <section class="flex flex-col gap-3 rounded-xl bg-slate-900 p-4">
+            <h2 class="text-sm font-medium text-slate-400">Place a call</h2>
+            <AppTextInput CssClass="rounded-lg bg-slate-800 px-3 py-2 text-slate-100 placeholder-slate-500"
+                          Placeholder="Target extension"
+                          Value="@this.ViewService.TargetExtension"
+                          ValueChanged="@(value => this.ViewService.TargetExtension = value)" />
+            <AppButton CssClass="rounded-lg bg-emerald-600 px-3 py-2 font-medium text-white hover:bg-emerald-500"
+                       OnClick="@this.OnCallClickedAsync">
+                📞 Audio call
+            </AppButton>
+        </section>
+
+        @if (this.ViewService.CallFailedMessage is not null)
+        {
+            <p class="rounded-lg bg-red-950 px-3 py-2 text-sm text-red-300">@this.ViewService.CallFailedMessage</p>
+        }
+    }
+    else
+    {
+        <section class="flex flex-col items-center gap-4 rounded-xl bg-slate-900 p-6">
+            <div class="flex h-20 w-20 items-center justify-center rounded-full bg-indigo-600 text-2xl font-semibold text-white">
+                @AvatarInitials(this.ViewService.CallTargetExtension)
+            </div>
+
+            <p class="text-sm text-slate-400">@this.ViewService.CallStateLabel</p>
+            <p class="text-lg font-medium text-slate-100">@this.ViewService.CallTargetExtension</p>
+
+            @if (this.ViewService.State == CallScreenState.Active)
+            {
+                <p class="font-mono text-slate-300">@this.ViewService.CallElapsedText</p>
+            }
+
+            <div class="flex flex-wrap justify-center gap-4">
+                @if (this.ViewService.State == CallScreenState.Dialing)
+                {
+                    <AppButton CssClass="rounded-full bg-red-600 px-6 py-3 font-medium text-white hover:bg-red-500"
+                               OnClick="@this.OnHangupClickedAsync">
+                        ✕ Cancel
+                    </AppButton>
+                }
+                else if (this.ViewService.State == CallScreenState.Incoming)
+                {
+                    <AppButton CssClass="rounded-full bg-emerald-600 px-6 py-3 font-medium text-white hover:bg-emerald-500"
+                               OnClick="@this.OnAnswerClickedAsync">
+                        ✓ Answer
+                    </AppButton>
+                    <AppButton CssClass="rounded-full bg-red-600 px-6 py-3 font-medium text-white hover:bg-red-500"
+                               OnClick="@this.OnDeclineClickedAsync">
+                        ✕ Decline
+                    </AppButton>
+                }
+                else if (this.ViewService.State == CallScreenState.Active)
+                {
+                    <AppButton CssClass="@($"rounded-full px-6 py-3 font-medium text-white {(this.ViewService.IsMuted ? "bg-indigo-600" : "bg-slate-700 hover:bg-slate-600")}")"
+                               OnClick="@this.OnMuteClickedAsync">
+                        @(this.ViewService.IsMuted ? "🔇" : "🎙")
+                    </AppButton>
+
+                    <AppButton CssClass="rounded-full bg-red-600 px-6 py-3 font-medium text-white hover:bg-red-500"
+                               OnClick="@this.OnHangupClickedAsync">
+                        ✕ Hang up
+                    </AppButton>
+                }
+            </div>
+        </section>
+    }
+
+    <section class="flex flex-1 flex-col gap-1 overflow-y-auto rounded-xl bg-slate-900 p-4 text-xs text-slate-400">
+        <h2 class="mb-1 text-sm font-medium text-slate-400">Event log</h2>
+        @foreach (string entry in this.ViewService.EventLog)
+        {
+            <p>@entry</p>
+        }
+    </section>
+</div>
