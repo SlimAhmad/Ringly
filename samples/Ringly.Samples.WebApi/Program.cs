@@ -27,8 +27,10 @@ builder.Services.AddSingleton<ILoggingBroker, AspNetLoggingBroker>();
 // scoped/transient (see docs/call-provider.md).
 builder.Services.AddSingleton<IAsteriskBroker, AsteriskBroker>();
 
-builder.Services.AddSingleton<InMemorySipCredentialsStore>();
-builder.Services.AddSingleton<ISipCredentialsStore>(sp => sp.GetRequiredService<InMemorySipCredentialsStore>());
+// SqlSipCredentialsStore depends on ITelephonyIdentityService, which depends on the Scoped
+// IStorageBroker (a DbContext) — so this must be Scoped too, not Singleton like the
+// InMemorySipCredentialsStore it replaces (a Singleton can't depend on a Scoped service).
+builder.Services.AddScoped<ISipCredentialsStore, SqlSipCredentialsStore>();
 builder.Services.AddSingleton<IQueueRegistry, InMemoryQueueRegistry>();
 
 builder.Services.AddScoped<IAsteriskSipEndpointConfigFoundationService, AsteriskSipEndpointConfigFoundationService>();
