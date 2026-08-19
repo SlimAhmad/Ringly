@@ -20,6 +20,17 @@ public partial class CallPage : ContentPage
     private bool isSpeakerOn;
     private bool isVideoMuted;
 
+    // Throttles how often RemoteVideoImage/LocalVideoImage.Source gets reassigned — confirmed live
+    // that reassigning ImageSource.FromStream faster than MAUI's underlying image decode can finish
+    // makes it cancel the in-flight decode, logged as a noisy
+    // "Microsoft.Maui.StreamImageSourceService: Unable to load image stream" / TaskCanceledException
+    // warning (19 in one 65s call). 100ms (10fps) is a generous cap relative to the video pipeline's
+    // own throttles (15fps encode, 6fps local preview) — this just prevents back-to-back decoded
+    // frames from queuing overlapping reassignments faster than the UI can actually render them.
+    private static readonly TimeSpan MinImageUpdateInterval = TimeSpan.FromMilliseconds(100);
+    private DateTime lastRemoteImageUpdateAt = DateTime.MinValue;
+    private DateTime lastLocalImageUpdateAt = DateTime.MinValue;
+
     // Whether the CURRENT call actually offered video — an Audio Call (see
     // OnAudioCallClicked/PlaceCallAsync) never calls IVideoSource.StartVideo() at all (no video
     // "m=" line to negotiate a format against), so the camera session genuinely never starts even
@@ -140,6 +151,13 @@ public partial class CallPage : ContentPage
     // RemoteVideoImage, same as HandleCallEvent's Dispatcher.Dispatch above.
     private void OnDecodedFrameReady(int width, int height, byte[] bgrSample)
     {
+        if (DateTime.UtcNow - this.lastRemoteImageUpdateAt < MinImageUpdateInterval)
+        {
+            return;
+        }
+
+        this.lastRemoteImageUpdateAt = DateTime.UtcNow;
+
         byte[] bitmap = BuildBitmap(width, height, bgrSample);
 
         this.Dispatcher.Dispatch(() =>
@@ -156,6 +174,13 @@ public partial class CallPage : ContentPage
     // implementation + currentCallIncludesVideo were all already true when it was wired up.
     private void OnLocalFrameReady(int width, int height, byte[] bgrSample)
     {
+        if (DateTime.UtcNow - this.lastLocalImageUpdateAt < MinImageUpdateInterval)
+        {
+            return;
+        }
+
+        this.lastLocalImageUpdateAt = DateTime.UtcNow;
+
         byte[] bitmap = BuildBitmap(width, height, bgrSample);
 
         this.Dispatcher.Dispatch(() =>
