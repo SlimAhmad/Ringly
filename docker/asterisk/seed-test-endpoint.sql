@@ -46,23 +46,22 @@ ON CONFLICT (id) DO NOTHING;
 -- (e.g. the Docker bridge gateway address) instead of trusting the client's self-report.
 -- rtp_timeout/rtp_timeout_hold are the backstop for a client that crashes or is force-killed
 -- without sending any SIP signaling at all (no BYE, no CANCEL) — see
--- AsteriskBroker.Credentials.cs's InsertSipEndpointObjectAsync for the full explanation. Confirmed
--- live: without these, a single session's worth of crashed test runs left 14 channels stuck open
--- for over an hour, and once an endpoint accrued enough of them, Asterisk started instantly
--- declining (SIP 603) every new call to it.
+-- AsteriskBroker.Credentials.cs's InsertSipEndpointObjectAsync for the full explanation, including
+-- why the original 30/60s values (issue #191/PR #192) turned out to be a false positive that killed
+-- every real video call around the 30s mark (issue #203) and were raised to 180/300s.
 INSERT INTO ps_endpoints (
     id, context, disallow, allow, auth, aors, webrtc, rewrite_contact,
     set_var, rtp_timeout, rtp_timeout_hold
 )
 VALUES
     ('1000', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1000', '1000', 'yes', 'yes',
-     'PJSIP_TRANSFER_HANDLING()=ari-only', 30, 60),
+     'PJSIP_TRANSFER_HANDLING()=ari-only', 180, 300),
     ('1001', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1001', '1001', 'yes', 'yes',
-     'PJSIP_TRANSFER_HANDLING()=ari-only', 30, 60),
+     'PJSIP_TRANSFER_HANDLING()=ari-only', 180, 300),
     ('1002', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1002', '1002', 'yes', 'yes',
-     'PJSIP_TRANSFER_HANDLING()=ari-only', 30, 60),
+     'PJSIP_TRANSFER_HANDLING()=ari-only', 180, 300),
     ('1003', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1003', '1003', 'yes', 'yes',
-     'PJSIP_TRANSFER_HANDLING()=ari-only', 30, 60),
+     'PJSIP_TRANSFER_HANDLING()=ari-only', 180, 300),
     ('1004', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1004', '1004', 'yes', 'yes',
-     'PJSIP_TRANSFER_HANDLING()=ari-only', 30, 60)
+     'PJSIP_TRANSFER_HANDLING()=ari-only', 180, 300)
 ON CONFLICT (id) DO NOTHING;
