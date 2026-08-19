@@ -76,6 +76,9 @@
         <PackageReference Include="Shiny.Maui.Controls.Camera" Version="1.0.2" />
         <!-- Pure managed C# VP8 codec for video calling — same package Ringly.Samples.Maui uses. -->
         <PackageReference Include="SIPSorcery.VP8" Version="10.0.15" />
+        <!-- HTTP client wrapper for SupportApiBroker (calling Ringly.Samples.WebApi) — house
+             convention across this repo's brokers, not a hand-rolled HttpClient. -->
+        <PackageReference Include="RESTFulSense" Version="3.2.0" />
     </ItemGroup>
 
     <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">

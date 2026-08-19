@@ -1,7 +1,10 @@
 @page "/"
 @* Page/container — orchestrates the route only, no UI logic, no direct use of base components,
    per the-standard-architecture's UI rules ("Pages are route containers and do not require
-   business logic"). All actual call-screen UI lives in the CallScreen Core Component. *@
+   business logic"). Composes the two independent Core Components — CallScreen owns the regular
+   call flow, SupportPanel owns the cold-support/queue-routing flow (Part 7); they don't call
+   each other (Core components don't call other Core components at the same level). *@
 @using Ringly.Samples.BlazorHybrid.Components.Cores
 
 <CallScreen />
+<SupportPanel />

@@ -31,6 +31,9 @@
          use; Vpx.Net.VP8Codec implements SIPSorceryMedia.Abstractions.IVideoEncoder, which is
          exactly what WindowsVideoEndPoint's constructor needs. -->
     <PackageReference Include="SIPSorcery.VP8" Version="10.0.15" />
+    <!-- HTTP client wrapper for SupportApiBroker (calling Ringly.Samples.WebApi) — house
+         convention across this repo's brokers, not a hand-rolled HttpClient. -->
+    <PackageReference Include="RESTFulSense" Version="3.2.0" />
   </ItemGroup>
 
   <ItemGroup>

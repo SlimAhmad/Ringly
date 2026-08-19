@@ -1,0 +1,23 @@
+@* Core Component — integrates with exactly one view service (ISupportViewService), per
+   the-standard-architecture's UI rules. Markup/code-behind separated (SupportPanel.razor.cs). *@
+@using Ringly.Samples.BlazorHybrid.Components.Bases
+@using Ringly.Samples.BlazorHybrid.ViewServices.Support
+@implements IDisposable
+
+<section class="mx-auto flex max-w-md flex-col gap-3 rounded-xl bg-slate-900 p-4">
+    <h2 class="text-sm font-medium text-slate-400">Need help? Request support</h2>
+    <AppTextInput CssClass="rounded-lg bg-slate-800 px-3 py-2 text-slate-100 placeholder-slate-500"
+                  Placeholder="Queue name"
+                  Value="@this.ViewService.QueueName"
+                  ValueChanged="@(value => this.ViewService.QueueName = value)" />
+    <AppButton CssClass="rounded-lg bg-indigo-700 px-3 py-2 font-medium text-white hover:bg-indigo-600"
+               IsDisabled="@this.ViewService.IsBusy"
+               OnClick="@this.OnRequestSupportClickedAsync">
+        🆘 Request support
+    </AppButton>
+
+    @if (!string.IsNullOrEmpty(this.ViewService.StatusMessage))
+    {
+        <p class="text-sm @this.ViewService.StatusMessageColorClass">@this.ViewService.StatusMessage</p>
+    }
+</section>

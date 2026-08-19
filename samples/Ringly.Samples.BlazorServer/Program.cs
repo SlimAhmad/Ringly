@@ -1,9 +1,11 @@
 using Ringly.Client.Abstractions;
 using Ringly.Client.SipSorcery;
+using Ringly.Samples.BlazorServer.Brokers.Apis;
 using Ringly.Samples.BlazorServer.Brokers.Audios;
 using Ringly.Samples.BlazorServer.Components;
 using Ringly.Samples.BlazorServer.Video;
 using Ringly.Samples.BlazorServer.ViewServices.Calls;
+using Ringly.Samples.BlazorServer.ViewServices.Support;
 using SIPSorceryMedia.Windows;
 using Vpx.Net;
 
@@ -50,6 +52,11 @@ builder.Services.AddSingleton<ICallClient, SipSorceryCallClient>();
 // The single dependency CallScreen (the Core Component) integrates with — see
 // ICallViewService.cs's own comment.
 builder.Services.AddSingleton<ICallViewService, CallViewService>();
+
+// Part 7: cold-support/queue-routing flow, calling Ringly.Samples.WebApi's
+// ClientsController/SupportController — see ISupportApiBroker.cs's own comment.
+builder.Services.AddSingleton<ISupportApiBroker, SupportApiBroker>();
+builder.Services.AddSingleton<ISupportViewService, SupportViewService>();
 
 var app = builder.Build();
 
