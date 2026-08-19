@@ -34,8 +34,17 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
     private const int RequiredDimensionMultiple = 16;
 
     private const uint VideoClockRateHz = 90000;
-    private const uint AssumedFrameRate = 30;
-    private const uint AssumedDurationRtpUnits = VideoClockRateHz / AssumedFrameRate;
+
+    // Both the throttle interval below and the RTP timestamp increment per sent frame are derived
+    // from this one value — confirmed live that leaving AssumedDurationRtpUnits at its old
+    // fixed-30fps value while actually encoding (and sending) at a throttled lower rate would
+    // have caused the RTP timestamp to under-advance relative to real elapsed time, misleading the
+    // receiver's own pacing/jitter-buffer logic. See OnFrameAnalyzed's own comment for why the
+    // throttle exists at all (encoding every camera-delivered frame was starving audio's real-time
+    // threads on a real device).
+    private const uint TargetEncodeFrameRate = 15;
+    private const uint AssumedDurationRtpUnits = VideoClockRateHz / TargetEncodeFrameRate;
+    private static readonly TimeSpan MinEncodeInterval = TimeSpan.FromSeconds(1.0 / TargetEncodeFrameRate);
 
     // Not static readonly — confirmed live (see AndroidAudioEndPoint/CustomWindowsAudioEndPoint)
     // that a static readonly logger field can permanently capture SIPSorcery's no-op default
@@ -55,6 +64,7 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
     private bool isSinkPaused;
     private bool hasLoggedFirstAnalyzeCall;
     private bool isUsingFrontCamera;
+    private DateTime lastEncodeAt = DateTime.MinValue;
 
     private int framesEncodedSinceLog;
     private int framesSkippedSinceLog;
@@ -254,6 +264,24 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
                 this.LogEncodeSummaryIfDue();
                 return;
             }
+
+            // Throttle to TargetEncodeFrameRate instead of encoding every single frame CameraX
+            // delivers (its analysis executor typically hands frames at the sensor's native rate,
+            // ~30fps). Confirmed live via a real device: encoding every frame with
+            // SIPSorcery.VP8 — a pure managed/software codec, no hardware acceleration — was
+            // saturating enough CPU to starve AndroidAudioEndPoint's own real-time capture/
+            // playback threads, producing sustained ~20-35% audio frame loss/concealment for the
+            // whole duration of any video call, not just occasional jitter. Throttling the
+            // encoder's own workload (not the camera's capture rate, which CameraX still delivers
+            // at full speed to WantsFrame/Analyze — this just skips MOST of those deliveries
+            // before the expensive part) trades outgoing video smoothness for audio staying
+            // intact, which is the right tradeoff for a voice-first calling app.
+            if (this.lastEncodeAt != DateTime.MinValue && DateTime.UtcNow - this.lastEncodeAt < MinEncodeInterval)
+            {
+                return;
+            }
+
+            this.lastEncodeAt = DateTime.UtcNow;
 
             byte[] i420Sample = ConvertYuv420888ToI420(image, width, height);
 
