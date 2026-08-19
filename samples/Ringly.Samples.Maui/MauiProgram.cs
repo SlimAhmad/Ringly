@@ -104,9 +104,30 @@ public static class MauiProgram
             // coincidence — without binding explicitly, ICE gathered (and the remote peer
             // nominated) a host candidate on that virtual, Windows-host-only adapter instead of
             // the real Wi-Fi one, causing a DTLS handshake timeout with no error until then. See
-            // SipSorceryCallOptions.BindAddress's own comment for the full story. Android doesn't
-            // need this — it has no Docker/WSL virtual adapters of its own to be confused by.
+            // SipSorceryCallOptions.BindAddress's own comment for the full story.
             options.BindAddress = CurrentLanHostAddress;
+#elif ANDROID
+            // Same class of bug as Windows' own X_BindAddress fix above, confirmed live via a
+            // real Asterisk SIP/SDP trace (pjsip set logger on / rtp set debug on): Android's own
+            // ICE candidate gathering picked up its CELLULAR/LTE interface instead of Wi-Fi
+            // (offered "typ host" candidate address 10.104.150.211 — a mobile-carrier APN-style
+            // address, not reachable from anything outside that carrier's own network) even
+            // though the phone was simultaneously connected to Wi-Fi. Both radios stay active at
+            // once on a real device, and RtpIceChannel enumerates every local interface, gathering
+            // and offering a candidate for whichever one it finds — Asterisk's RTP debug trace
+            // confirmed zero packets ever arrived from Android's leg as a direct result: media was
+            // being sent to (and expected from) an address nothing outside the phone's own carrier
+            // network could ever reach. Unlike Windows' host constant, there's no fixed IP to hard
+            // code here — it has to be read from the device's own current Wi-Fi connection at
+            // runtime. GetAndroidWifiIPv4Address() below does that; if it can't find one (e.g.
+            // Wi-Fi genuinely isn't connected), BindAddress is left null and ICE falls back to its
+            // original everything-interfaces behavior rather than binding to nothing at all.
+            string? androidWifiAddress = GetAndroidWifiIPv4Address();
+
+            if (androidWifiAddress is not null)
+            {
+                options.BindAddress = androidWifiAddress;
+            }
 #endif
         });
 
@@ -220,4 +241,37 @@ public static class MauiProgram
 
         return app;
     }
+
+#if ANDROID
+    // WifiManager.ConnectionInfo.IpAddress is deprecated as of API 31 (Android recommends
+    // ConnectivityManager/LinkProperties instead) but still functions — a fine tradeoff for a
+    // getting-started sample versus the added complexity of the newer API. Returns the device's
+    // current Wi-Fi IPv4 address, or null if Wi-Fi isn't connected (IpAddress reads 0 in that
+    // case) so callers can fall back to leaving BindAddress unset entirely.
+    private static string? GetAndroidWifiIPv4Address()
+    {
+        using var wifiManager = global::Android.App.Application.Context
+            .GetSystemService(global::Android.Content.Context.WifiService) as global::Android.Net.Wifi.WifiManager;
+
+        int rawAddress = wifiManager?.ConnectionInfo?.IpAddress ?? 0;
+
+        if (rawAddress == 0)
+        {
+            return null;
+        }
+
+        // IpAddress is a little-endian-encoded int32 regardless of the device's own byte order —
+        // documented Android behavior, not something DeviceInfo/BitConverter.IsLittleEndian needs
+        // to account for.
+        var addressBytes = new byte[]
+        {
+            (byte)(rawAddress & 0xFF),
+            (byte)((rawAddress >> 8) & 0xFF),
+            (byte)((rawAddress >> 16) & 0xFF),
+            (byte)((rawAddress >> 24) & 0xFF)
+        };
+
+        return new System.Net.IPAddress(addressBytes).ToString();
+    }
+#endif
 }
