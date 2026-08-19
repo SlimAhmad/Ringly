@@ -6,6 +6,8 @@ using Ringly.Asterisk.Services.Processings.Provisioning;
 using Ringly.CallCenter.Abstractions;
 using Ringly.CallCenter.Asterisk.Services.Foundations.Queues;
 using Ringly.Samples.WebApi;
+using Ringly.Samples.WebApi.Brokers.Storages;
+using Ringly.Samples.WebApi.Services.Foundations.TelephonyIdentities;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,6 +30,12 @@ builder.Services.AddSingleton<ISipCredentialsStore>(sp => sp.GetRequiredService<
 builder.Services.AddSingleton<IQueueRegistry, InMemoryQueueRegistry>();
 
 builder.Services.AddScoped<IAsteriskSipEndpointConfigFoundationService, AsteriskSipEndpointConfigFoundationService>();
+
+// StorageBroker owns a DbContext — Scoped, not Singleton (DbContext isn't thread-safe for
+// concurrent requests) and not Transient (a fresh EF change-tracker per request is standard,
+// but per-injection-site would be wasteful/inconsistent within one request).
+builder.Services.AddScoped<IStorageBroker, StorageBroker>();
+builder.Services.AddScoped<ITelephonyIdentityService, TelephonyIdentityService>();
 builder.Services.AddScoped<ICallProvisioningService, CallProvisioningService>();
 builder.Services.AddScoped<ICallProvider, AsteriskCallFoundationService>();
 builder.Services.AddScoped<ICallCenterProvider, AsteriskCallCenterFoundationService>();

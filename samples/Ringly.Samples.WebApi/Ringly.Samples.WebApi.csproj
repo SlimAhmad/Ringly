@@ -13,6 +13,20 @@
          RESTFulSense's use elsewhere in Ringly (as an HTTP client wrapper for brokers) and other
          Standard-based API projects. -->
     <PackageReference Include="RESTFulSense" Version="3.2.0" />
+    <!-- First SQL-Server-backed storage broker in the solution — the application's own telephony
+         data (TelephonyIdentity/TelephonyDevice/TelephonyCall), a separate database from Postgres,
+         which keeps backing Asterisk's realtime PJSIP config exactly as before (see
+         Ringly.Asterisk/Brokers/AsteriskBroker.Credentials.cs). EFxceptionsContext wraps DbContext
+         so storage-layer failures surface as meaningful typed exceptions (DuplicateKeyException,
+         ForeignKeyConstraintConflictException, etc.) instead of raw SqlException/DbUpdateException.
+         No Docker service for this — plain local SQL Server (LocalDB), see appsettings.json. -->
+    <PackageReference Include="EFxceptions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.7" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.7">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Xeption" Version="2.9.0" />
   </ItemGroup>
 
   <ItemGroup>
