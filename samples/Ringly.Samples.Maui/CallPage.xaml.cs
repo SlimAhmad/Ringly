@@ -82,6 +82,7 @@ public partial class CallPage : ContentPage
         {
             this.androidVideoEndPoint.AttachCameraView(this.LocalCameraView);
             this.androidVideoEndPoint.DecodedFrameReady += this.OnDecodedFrameReady;
+            this.androidVideoEndPoint.LocalFrameReady += this.OnLocalFrameReady;
         }
 
         this.SwitchCameraButtonContainer.IsVisible = this.androidVideoEndPoint is not null;
@@ -128,6 +129,7 @@ public partial class CallPage : ContentPage
         if (this.androidVideoEndPoint is not null)
         {
             this.androidVideoEndPoint.DecodedFrameReady -= this.OnDecodedFrameReady;
+            this.androidVideoEndPoint.LocalFrameReady -= this.OnLocalFrameReady;
             this.androidVideoEndPoint.DetachCameraView();
         }
 #endif
@@ -144,6 +146,22 @@ public partial class CallPage : ContentPage
         {
             this.RemoteVideoImage.Source = ImageSource.FromStream(() => new MemoryStream(bitmap));
             this.RemoteVideoImage.IsVisible = true;
+        });
+    }
+
+    // Only ever raised by AndroidCameraXVideoEndPoint (see IAndroidVideoCaptureEndPoint's own
+    // comment) — Windows and the Shiny-based Android path both render their self-preview through
+    // LocalCameraView's own native surface instead, so LocalVideoImage stays hidden there. Since
+    // this only fires from that one subscription, being called at all means Android + that
+    // implementation + currentCallIncludesVideo were all already true when it was wired up.
+    private void OnLocalFrameReady(int width, int height, byte[] bgrSample)
+    {
+        byte[] bitmap = BuildBitmap(width, height, bgrSample);
+
+        this.Dispatcher.Dispatch(() =>
+        {
+            this.LocalVideoImage.Source = ImageSource.FromStream(() => new MemoryStream(bitmap));
+            this.LocalVideoImage.IsVisible = this.currentCallIncludesVideo;
         });
     }
 
@@ -419,6 +437,8 @@ public partial class CallPage : ContentPage
         this.RemoteVideoImage.IsVisible = false;
         this.RemoteVideoImage.Source = null;
         this.LocalCameraView.IsVisible = false;
+        this.LocalVideoImage.IsVisible = false;
+        this.LocalVideoImage.Source = null;
         this.VideoButton.Text = "📷";
         this.VideoButton.BackgroundColor = Color.FromArgb("#2A2E3F");
     }
@@ -476,7 +496,12 @@ public partial class CallPage : ContentPage
 #if WINDOWS
         this.LocalCameraView.IsVisible = this.windowsVideoEndPoint is not null && this.currentCallIncludesVideo;
 #elif ANDROID
-        this.LocalCameraView.IsVisible = this.androidVideoEndPoint is not null && this.currentCallIncludesVideo;
+        // LocalCameraView stays hidden on Android — AndroidCameraXVideoEndPoint has no native
+        // preview surface bound to it (see its own class comment), so it would just show a blank
+        // box, which is exactly the "self preview doesn't work" symptom this replaces.
+        // LocalVideoImage.IsVisible is instead set as frames actually arrive — see
+        // OnLocalFrameReady — so it only appears once there's really something to show.
+        this.LocalCameraView.IsVisible = false;
 #endif
 
         this.StartCallTimer();

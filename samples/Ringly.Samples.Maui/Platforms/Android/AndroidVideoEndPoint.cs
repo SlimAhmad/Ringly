@@ -86,6 +86,11 @@ public sealed class AndroidVideoEndPoint : IVideoSource, IVideoSink, IFrameAnaly
     // CustomWindowsVideoEndPoint.
     public event Action<int, int, byte[]>? DecodedFrameReady;
 
+    // Never raised — see IAndroidVideoCaptureEndPoint.LocalFrameReady's comment. Shiny's CameraView
+    // is its own native preview surface and renders the live local feed on its own once attached
+    // (AttachCameraView below), so this class has no local frames of its own to convert/publish.
+    public event Action<int, int, byte[]>? LocalFrameReady;
+
     public AndroidVideoEndPoint()
     {
         this.sourceFormatManager = new MediaFormatManager<VideoFormat>(this.videoCodec.SupportedFormats);
