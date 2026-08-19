@@ -35,14 +35,22 @@ public partial class AsteriskBroker
         ariEvent.TryGetProperty("type", out JsonElement type) &&
         type.GetString() == eventType;
 
-    private static StasisStartEvent MapToStasisStartEvent(JsonElement ariEvent) =>
-        new()
+    private static StasisStartEvent MapToStasisStartEvent(JsonElement ariEvent)
+    {
+        JsonElement channel = ariEvent.GetProperty("channel");
+
+        return new StasisStartEvent
         {
-            ChannelId = ariEvent.GetProperty("channel").GetProperty("id").GetString() ?? string.Empty,
+            ChannelId = channel.GetProperty("id").GetString() ?? string.Empty,
             Args = ariEvent.TryGetProperty("args", out JsonElement args)
                 ? args.EnumerateArray().Select(arg => arg.GetString() ?? string.Empty).ToArray()
-                : []
+                : [],
+            CallerExtension = channel.TryGetProperty("caller", out JsonElement caller)
+                && caller.TryGetProperty("number", out JsonElement callerNumber)
+                    ? callerNumber.GetString()
+                    : null
         };
+    }
 
     private static StasisEndEvent MapToStasisEndEvent(JsonElement ariEvent) =>
         new()
