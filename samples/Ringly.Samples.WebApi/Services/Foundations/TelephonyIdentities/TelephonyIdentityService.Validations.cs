@@ -37,6 +37,9 @@ public partial class TelephonyIdentityService
     private static void ValidateUserId(Guid userId) =>
         Validate((Rule: IsInvalid(userId), Parameter: nameof(TelephonyIdentity.UserId)));
 
+    private static void ValidateSipUsername(string sipUsername) =>
+        Validate((Rule: IsInvalid(sipUsername), Parameter: nameof(TelephonyIdentity.SipUsername)));
+
     private static void ValidateTelephonyIdentityIsNotNull(TelephonyIdentity? telephonyIdentity)
     {
         if (telephonyIdentity is null)

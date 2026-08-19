@@ -8,6 +8,7 @@ public interface ITelephonyIdentityService
     ValueTask<IQueryable<TelephonyIdentity>> RetrieveAllTelephonyIdentitiesAsync();
     ValueTask<TelephonyIdentity> RetrieveTelephonyIdentityByIdAsync(Guid telephonyIdentityId);
     ValueTask<TelephonyIdentity?> RetrieveTelephonyIdentityByUserIdAsync(Guid userId);
+    ValueTask<TelephonyIdentity?> RetrieveTelephonyIdentityBySipUsernameAsync(string sipUsername);
     ValueTask<TelephonyIdentity> ModifyTelephonyIdentityAsync(TelephonyIdentity telephonyIdentity);
     ValueTask<TelephonyIdentity> RemoveTelephonyIdentityByIdAsync(Guid telephonyIdentityId);
 }
