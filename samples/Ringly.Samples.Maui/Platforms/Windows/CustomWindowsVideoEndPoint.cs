@@ -65,6 +65,17 @@ public sealed class CustomWindowsVideoEndPoint : IVideoSource, IVideoSink, IFram
     private const uint AssumedDurationRtpUnits = VideoClockRateHz / TargetEncodeFrameRate;
     private static readonly TimeSpan MinEncodeInterval = TimeSpan.FromSeconds(1.0 / TargetEncodeFrameRate);
 
+    // Confirmed live (issue #201) that #198's frame-rate throttle alone didn't help: after
+    // throttling Windows to ~11-12fps actual (down from ~30fps), Android's Decoded rate stayed
+    // pinned at the exact same ~3fps as before the throttle — the bottleneck isn't how MANY frames
+    // arrive, it's the per-frame decode COST, driven by resolution. Windows was encoding (and
+    // Android therefore decoding) whatever native resolution Shiny's CameraView captures at,
+    // uncapped. Matches AndroidCameraXVideoEndPoint's own EncodeTargetLongestSide target (320,
+    // #190) so Android's decoder processes similarly-sized frames in both directions, the same
+    // "downsample ourselves rather than trust the capture pipeline's default" approach that fixed
+    // Android's own encode-cost problem.
+    private const int EncodeTargetLongestSide = 320;
+
     // Not static readonly — confirmed live in AndroidAudioEndPoint/CustomWindowsAudioEndPoint
     // that a static readonly logger field can permanently capture SIPSorcery's no-op default
     // logger if this class is constructed (as it is, in MauiProgram.cs) before
@@ -164,10 +175,32 @@ public sealed class CustomWindowsVideoEndPoint : IVideoSource, IVideoSink, IFram
 
         try
         {
+            int downsampleFactor = Math.Max(
+                1, (int)Math.Round((double)Math.Max(windowsFrame.Width, windowsFrame.Height) / EncodeTargetLongestSide));
+
+            int encodeWidth = windowsFrame.Width;
+            int encodeHeight = windowsFrame.Height;
+            byte[] bgra = windowsFrame.Bgra;
+
+            if (downsampleFactor > 1)
+            {
+                encodeWidth = (windowsFrame.Width / downsampleFactor / RequiredDimensionMultiple) * RequiredDimensionMultiple;
+                encodeHeight = (windowsFrame.Height / downsampleFactor / RequiredDimensionMultiple) * RequiredDimensionMultiple;
+
+                if (encodeWidth <= 0 || encodeHeight <= 0)
+                {
+                    this.framesSkippedSinceLog++;
+                    this.LogEncodeSummaryIfDue();
+                    return ValueTask.FromResult<IReadOnlyList<OverlayBox>?>(null);
+                }
+
+                bgra = DownsampleBgra(bgra, windowsFrame.Width, windowsFrame.Height, encodeWidth, encodeHeight);
+            }
+
             byte[] encodedSample = this.videoEncoder.EncodeVideo(
-                windowsFrame.Width,
-                windowsFrame.Height,
-                windowsFrame.Bgra,
+                encodeWidth,
+                encodeHeight,
+                bgra,
                 VideoPixelFormatsEnum.Bgra,
                 VideoCodecsEnum.VP8);
 
@@ -183,6 +216,30 @@ public sealed class CustomWindowsVideoEndPoint : IVideoSource, IVideoSink, IFram
         }
 
         return ValueTask.FromResult<IReadOnlyList<OverlayBox>?>(null);
+    }
+
+    // Nearest-neighbor point-sampling downscale of a BGRA32 buffer — the Windows counterpart of
+    // AndroidCameraXVideoEndPoint's DownsampleI420 (see EncodeTargetLongestSide's comment for why).
+    // 4 bytes/pixel here instead of I420's planar Y/U/V layout, since WindowsCameraFrame.Bgra is
+    // already a flat interleaved BGRA buffer.
+    private static byte[] DownsampleBgra(byte[] source, int sourceWidth, int sourceHeight, int targetWidth, int targetHeight)
+    {
+        var target = new byte[targetWidth * targetHeight * 4];
+
+        for (int y = 0; y < targetHeight; y++)
+        {
+            int sourceY = y * sourceHeight / targetHeight;
+            int sourceRowOffset = sourceY * sourceWidth * 4;
+            int targetRowOffset = y * targetWidth * 4;
+
+            for (int x = 0; x < targetWidth; x++)
+            {
+                int sourceX = x * sourceWidth / targetWidth;
+                Array.Copy(source, sourceRowOffset + (sourceX * 4), target, targetRowOffset + (x * 4), 4);
+            }
+        }
+
+        return target;
     }
 
     private void LogEncodeSummaryIfDue()
