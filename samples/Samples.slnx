@@ -2,4 +2,5 @@
   <Project Path="Ringly.Samples.Console/Ringly.Samples.Console.csproj" />
   <Project Path="Ringly.Samples.Maui/Ringly.Samples.Maui.csproj" />
   <Project Path="Ringly.Samples.WebApi/Ringly.Samples.WebApi.csproj" />
+  <Project Path="Ringly.Samples.WebApi.Tests.Unit/Ringly.Samples.WebApi.Tests.Unit.csproj" />
 </Solution>
