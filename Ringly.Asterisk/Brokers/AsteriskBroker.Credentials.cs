@@ -95,12 +95,20 @@ public partial class AsteriskBroker
         // never fires because Asterisk itself never learns the channel ended. Without this, such a
         // channel (and, once bridged, its peer) sits open indefinitely — confirmed live: 14 leaked
         // channels accumulated over one session, some over an hour old, until an endpoint accrued
-        // enough of them that Asterisk started instantly declining every new call to it. 30/60s
-        // mirror common Asterisk defaults for "no RTP for this long on an active/held call" — long
-        // enough not to false-positive during real bursty WebRTC traffic, short enough that a real
-        // crash gets reaped well before it can affect the next call.
-        command.Parameters.AddWithValue("rtp_timeout", 30);
-        command.Parameters.AddWithValue("rtp_timeout_hold", 60);
+        // enough of them that Asterisk started instantly declining every new call to it.
+        //
+        // 30/60s (this value's original setting, issue #191/PR #192) turned out to be a false
+        // positive, not just a tight-but-correct threshold — confirmed live (issue #203) via
+        // Asterisk's own log: "Disconnecting channel ... for lack of video RTP activity in 33
+        // seconds" on a call whose Android-side app log showed continuous video encoding the whole
+        // time, with only 1 total audio frame ever conceded across the entire call. Two consecutive
+        // real calls both got killed within a second of each other's duration (~29s), which is a
+        // systematic cutoff, not the kind of call genuinely abandoned clients would exhibit — a
+        // truly crashed client stays dead for minutes, not seconds. 180/300s gives real calls (and
+        // Android's own throttled, sparse video RTP — TargetEncodeFrameRate=15, often achieving
+        // only ~3fps in practice) far more headroom while still eventually reaping abandoned ones.
+        command.Parameters.AddWithValue("rtp_timeout", 180);
+        command.Parameters.AddWithValue("rtp_timeout_hold", 300);
 
         await command.ExecuteNonQueryAsync();
     }
