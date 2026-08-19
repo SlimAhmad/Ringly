@@ -20,4 +20,13 @@ public interface IAndroidVideoCaptureEndPoint
     Task SwitchCameraAsync();
 
     event Action<int, int, byte[]>? DecodedFrameReady;
+
+    // Raw locally-captured frames (BGR24, same format/shape as DecodedFrameReady — see
+    // CallPage.xaml.cs's shared OnDecodedFrameReady/BuildBitmap for why), for a self-preview PIP to
+    // render. AndroidVideoEndPoint (Shiny CameraView path) never raises this — CameraView is its
+    // own native preview surface and shows the live feed on its own once attached, so there's
+    // nothing for this class to convert/publish. AndroidCameraXVideoEndPoint (no native preview
+    // surface at all — see its own class comment) raises it as the one way it can show a
+    // self-preview.
+    event Action<int, int, byte[]>? LocalFrameReady;
 }

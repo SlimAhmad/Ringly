@@ -20,15 +20,16 @@ namespace Ringly.Samples.Maui.Platforms.Android;
 // delivers frames where the Shiny-based one didn't, that confirms the gap is inside Shiny's
 // library rather than a mistake in how we drove it.
 //
-// Deliberately minimal: no local self-preview surface (no Preview use case bound) — CameraX
-// doesn't require Preview to be part of the bound use-case set, and this first pass is purely
-// about confirming the capture -> encode -> RTP -> decode pipeline itself works, the same phased
-// approach used throughout this session's video work. AttachCameraView/DetachCameraView are
-// therefore no-ops here (see IAndroidVideoCaptureEndPoint) so CallPage's existing wiring compiles
-// and runs unchanged regardless of which implementation MauiProgram.cs registers. No rotation
-// handling either (Shiny's own BindUseCases computes a target rotation we have no equivalent
-// source for here) — video may appear sideways depending on device orientation; acceptable for a
-// first diagnostic pass, revisit if this implementation proves out and becomes the real one.
+// No CameraX Preview use case bound — only ImageAnalysis. AttachCameraView/DetachCameraView are
+// therefore still no-ops here (see IAndroidVideoCaptureEndPoint) so CallPage's existing wiring
+// compiles and runs unchanged regardless of which implementation MauiProgram.cs registers; a
+// self-preview instead goes through LocalFrameReady, converting an already-captured analysis frame
+// to a bitmap for CallPage's own Image-based PIP (mirrors how the remote party's decoded video is
+// already shown — see OnFrameAnalyzed/ConvertI420ToBgr and CallPage.xaml.cs's OnDecodedFrameReady/
+// BuildBitmap). No rotation handling either (Shiny's own BindUseCases computes a target rotation we
+// have no equivalent source for here) — both the outgoing encoded video and this local preview may
+// appear sideways depending on device orientation; acceptable for now, revisit if this
+// implementation proves out and becomes the real one.
 public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAndroidVideoCaptureEndPoint, IDisposable
 {
     private const int RequiredDimensionMultiple = 16;
@@ -55,6 +56,17 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
     // OnFrameAnalyzed/DownsampleI420 below guarantees the encoder's actual input size regardless of
     // what resolution CameraX's default analysis pipeline happens to choose on a given device.
     private const int EncodeTargetLongestSide = 320;
+
+    // Self-preview PIP throttle — deliberately lower than TargetEncodeFrameRate. This class has no
+    // native preview surface (see the class comment: "no local self-preview surface" was a
+    // deliberate first-pass scope decision), so the only way to show one at all is converting an
+    // already-captured frame to a bitmap for a UI Image control (CallPage.xaml.cs's
+    // OnLocalFrameReady, mirroring the existing OnDecodedFrameReady/BuildBitmap pattern used for
+    // the remote party's video). That conversion is extra CPU work on top of the encode pipeline
+    // already confirmed to be the bottleneck starving audio on this device (#183, #185) — 6fps is
+    // enough for a small PIP thumbnail to not look frozen, without materially adding to that load.
+    private const uint LocalPreviewFrameRate = 6;
+    private static readonly TimeSpan MinLocalPreviewInterval = TimeSpan.FromSeconds(1.0 / LocalPreviewFrameRate);
 
     // Not static readonly — confirmed live (see AndroidAudioEndPoint/CustomWindowsAudioEndPoint)
     // that a static readonly logger field can permanently capture SIPSorcery's no-op default
@@ -85,6 +97,7 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
     private bool hasLoggedFirstAnalyzeCall;
     private bool isUsingFrontCamera;
     private DateTime lastEncodeAt = DateTime.MinValue;
+    private DateTime lastLocalPreviewAt = DateTime.MinValue;
 
     private int framesEncodedSinceLog;
     private int framesSkippedSinceLog;
@@ -102,6 +115,11 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
     public event VideoSinkSampleDecodedFasterDelegate? OnVideoSinkDecodedSampleFaster;
 
     public event Action<int, int, byte[]>? DecodedFrameReady;
+
+    // Raw locally-captured frames (BGR24, same shape as DecodedFrameReady), throttled to
+    // LocalPreviewFrameRate — see IAndroidVideoCaptureEndPoint.LocalFrameReady's comment for why
+    // this class raises it and AndroidVideoEndPoint doesn't.
+    public event Action<int, int, byte[]>? LocalFrameReady;
 
     public AndroidCameraXVideoEndPoint()
     {
@@ -346,6 +364,19 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
 
             this.OnVideoSourceEncodedSample?.Invoke(AssumedDurationRtpUnits, encodedSample);
 
+            // Reuses the same (possibly already-downsampled) i420Sample/encodeWidth/encodeHeight
+            // the encoder just consumed rather than converting the original captured frame — see
+            // LocalPreviewFrameRate's comment for why this needs to stay cheap. Gated on there
+            // being an actual subscriber (CallPage only subscribes while its own PIP is visible)
+            // so an inactive/backgrounded preview costs nothing.
+            if (this.LocalFrameReady is not null &&
+                (this.lastLocalPreviewAt == DateTime.MinValue || DateTime.UtcNow - this.lastLocalPreviewAt >= MinLocalPreviewInterval))
+            {
+                this.lastLocalPreviewAt = DateTime.UtcNow;
+                byte[] previewBgr = ConvertI420ToBgr(i420Sample, encodeWidth, encodeHeight);
+                this.LocalFrameReady.Invoke(encodeWidth, encodeHeight, previewBgr);
+            }
+
             this.framesEncodedSinceLog++;
             this.LogEncodeSummaryIfDue();
         }
@@ -384,6 +415,47 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
 
         return i420;
     }
+
+    // Standard BT.601 I420 (planar YUV 4:2:0) -> BGR24 conversion, used only for the throttled
+    // local-preview PIP (see LocalPreviewFrameRate). No rotation handling, same caveat as this
+    // class's own top-level comment — the preview may appear sideways depending on device
+    // orientation, matching whatever the outgoing encoded video already looks like on the far end.
+    private static byte[] ConvertI420ToBgr(byte[] i420, int width, int height)
+    {
+        int chromaWidth = width / 2;
+        int ySize = width * height;
+        int chromaSize = chromaWidth * (height / 2);
+        int uOffset = ySize;
+        int vOffset = ySize + chromaSize;
+
+        var bgr = new byte[ySize * 3];
+
+        for (int y = 0; y < height; y++)
+        {
+            int chromaRow = y / 2;
+
+            for (int x = 0; x < width; x++)
+            {
+                int chromaColumn = x / 2;
+                int yValue = i420[(y * width) + x] & 0xFF;
+                int uValue = (i420[uOffset + (chromaRow * chromaWidth) + chromaColumn] & 0xFF) - 128;
+                int vValue = (i420[vOffset + (chromaRow * chromaWidth) + chromaColumn] & 0xFF) - 128;
+
+                int red = yValue + ((1402 * vValue) / 1000);
+                int green = yValue - ((344 * uValue) / 1000) - ((714 * vValue) / 1000);
+                int blue = yValue + ((1772 * uValue) / 1000);
+
+                int pixelOffset = ((y * width) + x) * 3;
+                bgr[pixelOffset] = ClampToByte(blue);
+                bgr[pixelOffset + 1] = ClampToByte(green);
+                bgr[pixelOffset + 2] = ClampToByte(red);
+            }
+        }
+
+        return bgr;
+    }
+
+    private static byte ClampToByte(int value) => (byte)Math.Clamp(value, 0, 255);
 
     // Nearest-neighbor point-sampling downscale of an already-assembled I420 buffer — used instead
     // of CameraX's own SetTargetResolution to guarantee the actual size handed to the VP8 encoder
