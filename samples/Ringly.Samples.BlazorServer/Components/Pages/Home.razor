@@ -1,7 +1,13 @@
-﻿@page "/"
+@page "/"
+@* Page/container — orchestrates the route only, no UI logic, no direct use of base components,
+   per the-standard-architecture's UI rules ("Pages are route containers and do not require
+   business logic"). All actual call-screen UI lives in the CallScreen Core Component.
+   @rendermode InteractiveServer: CallScreen needs live interactivity (button clicks, the
+   once-a-second call timer, call-event subscriptions) — without this the page renders once,
+   statically, with no server-side event wiring at all. *@
+@using Ringly.Samples.BlazorServer.Components.Cores
+@rendermode InteractiveServer
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Ringly — Blazor Server</PageTitle>
 
-<h1>Hello, world!</h1>
-
-Welcome to your new app.
+<CallScreen />

@@ -12,4 +12,21 @@
     <ProjectReference Include="..\..\Ringly.Client.SipSorcery\Ringly.Client.SipSorcery.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Real microphone/speaker access — same package Ringly.Samples.Maui/Ringly.Samples.BlazorHybrid
+         use for their Windows target, via the same linked CustomWindowsAudioEndPoint below. Also
+         backs this project's own AudioTonePlayerBroker (dial/ring tone playback — no MAUI here,
+         so Plugin.Maui.Audio isn't available). -->
+    <PackageReference Include="NAudio" Version="2.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Reuses Ringly.Samples.Maui's platform audio endpoint and tone generator directly (same
+         hand-rolled WASAPI capture code, same synthesized-WAV tone code) rather than duplicating
+         them — confirmed both have zero MAUI dependency, just NAudio/SIPSorceryMedia.Abstractions
+         and plain C# respectively, so they link into this plain ASP.NET Core project cleanly. -->
+    <Compile Include="..\Ringly.Samples.Maui\Platforms\Windows\CustomWindowsAudioEndPoint.cs" Link="Platforms\Windows\CustomWindowsAudioEndPoint.cs" />
+    <Compile Include="..\Ringly.Samples.Maui\ToneGenerator.cs" Link="ToneGenerator.cs" />
+  </ItemGroup>
+
 </Project>

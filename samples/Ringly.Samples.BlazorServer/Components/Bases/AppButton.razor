@@ -1,0 +1,21 @@
+@* Base component — wraps the native <button> element only. No business logic, exception
+   handling, validation, or calculation lives here, per the-standard-architecture's UI rules
+   ("Base components behave like brokers... do not contain business logic"). *@
+
+<button type="button" class="@CssClass" disabled="@IsDisabled" @onclick="OnClick">
+    @ChildContent
+</button>
+
+@code {
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    [Parameter]
+    public string CssClass { get; set; } = string.Empty;
+
+    [Parameter]
+    public bool IsDisabled { get; set; }
+
+    [Parameter]
+    public EventCallback OnClick { get; set; }
+}
