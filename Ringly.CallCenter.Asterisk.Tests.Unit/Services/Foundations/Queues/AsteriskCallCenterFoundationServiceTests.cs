@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using Moq;
+using Ringly.Abstractions.Models;
 using Ringly.Asterisk.Brokers;
 using Ringly.Asterisk.Models;
 using Ringly.CallCenter.Abstractions;
@@ -52,6 +53,28 @@ public partial class AsteriskCallCenterFoundationServiceTests
     private static Filler<Bridge> CreateBridgeFiller()
     {
         var filler = new Filler<Bridge>();
+        filler.Setup();
+
+        return filler;
+    }
+
+    private static ClaimResult CreateRandomClaimResult() =>
+        CreateClaimResultFiller().Create();
+
+    private static Filler<ClaimResult> CreateClaimResultFiller()
+    {
+        var filler = new Filler<ClaimResult>();
+        filler.Setup();
+
+        return filler;
+    }
+
+    private static LiveRecording CreateRandomLiveRecording() =>
+        CreateLiveRecordingFiller().Create();
+
+    private static Filler<LiveRecording> CreateLiveRecordingFiller()
+    {
+        var filler = new Filler<LiveRecording>();
         filler.Setup();
 
         return filler;
