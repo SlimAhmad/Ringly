@@ -21,7 +21,9 @@ public partial class CallScreen : ComponentBase, IDisposable
 
     private Task OnRegisterClickedAsync() => this.ViewService.RegisterAsync().AsTask();
 
-    private Task OnCallClickedAsync() => this.ViewService.PlaceCallAsync().AsTask();
+    private Task OnAudioCallClickedAsync() => this.ViewService.PlaceAudioCallAsync().AsTask();
+
+    private Task OnVideoCallClickedAsync() => this.ViewService.PlaceVideoCallAsync().AsTask();
 
     private Task OnHangupClickedAsync() => this.ViewService.HangupAsync().AsTask();
 
@@ -30,6 +32,8 @@ public partial class CallScreen : ComponentBase, IDisposable
     private Task OnDeclineClickedAsync() => this.ViewService.DeclineAsync().AsTask();
 
     private Task OnMuteClickedAsync() => this.ViewService.ToggleMuteAsync().AsTask();
+
+    private Task OnVideoToggleClickedAsync() => this.ViewService.ToggleVideoMuteAsync().AsTask();
 
     private static string AvatarInitials(string extensionValue) =>
         string.IsNullOrEmpty(extensionValue) ? "?" : extensionValue[..Math.Min(2, extensionValue.Length)];

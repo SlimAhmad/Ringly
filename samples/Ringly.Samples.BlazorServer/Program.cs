@@ -2,7 +2,10 @@ using Ringly.Client.Abstractions;
 using Ringly.Client.SipSorcery;
 using Ringly.Samples.BlazorServer.Brokers.Audios;
 using Ringly.Samples.BlazorServer.Components;
+using Ringly.Samples.BlazorServer.Video;
 using Ringly.Samples.BlazorServer.ViewServices.Calls;
+using SIPSorceryMedia.Windows;
+using Vpx.Net;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +34,17 @@ builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSource>(windows
 builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSink>(windowsAudioEndPoint);
 
 builder.Services.AddSingleton<IAudioTonePlayerBroker, AudioTonePlayerBroker>();
+
+// Headless webcam capture — no CameraView/MAUI needed (see WindowsVideoFramePreviewSource.cs's
+// own comment for why this replaced CustomWindowsVideoEndPoint's approach). Registered as its
+// own concrete singleton (not just under IVideoSource/IVideoSink) so it can also be resolved
+// directly for InitialiseVideoSourceDevice() below and by WindowsVideoFramePreviewSource.
+var windowsVideoEndPoint = new WindowsVideoEndPoint(new VP8Codec());
+builder.Services.AddSingleton(windowsVideoEndPoint);
+builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IVideoSource>(windowsVideoEndPoint);
+builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IVideoSink>(windowsVideoEndPoint);
+builder.Services.AddSingleton<IVideoFramePreviewSource, WindowsVideoFramePreviewSource>();
+
 builder.Services.AddSingleton<ICallClient, SipSorceryCallClient>();
 
 // The single dependency CallScreen (the Core Component) integrates with — see
@@ -40,6 +54,18 @@ builder.Services.AddSingleton<ICallViewService, CallViewService>();
 var app = builder.Build();
 
 SIPSorcery.LogFactory.Set(app.Services.GetRequiredService<ILoggerFactory>());
+
+// Opens the default webcam once at startup rather than per-call — WindowsVideoEndPoint.StartVideo
+// only starts/stops an already-initialised capture session, it doesn't open the device itself.
+// Trade-off: the webcam indicator light turns on as soon as this process starts, not only during
+// an actual video call — acceptable for a getting-started sample, revisit if that's undesirable
+// for a real deployment (e.g. defer this until the first PlaceVideoCallAsync/AnswerAsync call).
+bool videoDeviceInitialised = await windowsVideoEndPoint.InitialiseVideoSourceDevice();
+
+if (!videoDeviceInitialised)
+{
+    app.Logger.LogWarning("No webcam found — video calls will have no outgoing video.");
+}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

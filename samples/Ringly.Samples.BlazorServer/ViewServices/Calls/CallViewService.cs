@@ -2,6 +2,7 @@ using Ringly.Client.Abstractions;
 using Ringly.Client.Abstractions.Models;
 using Ringly.Samples.BlazorServer.Brokers.Audios;
 using Ringly.Samples.BlazorServer.Models.Calls;
+using Ringly.Samples.BlazorServer.Video;
 using Ringly.Samples.Maui;
 
 namespace Ringly.Samples.BlazorServer.ViewServices.Calls;
@@ -10,6 +11,7 @@ public sealed class CallViewService : ICallViewService
 {
     private readonly ICallClient callClient;
     private readonly IAudioTonePlayerBroker audioTonePlayerBroker;
+    private readonly IVideoFramePreviewSource videoFramePreviewSource;
 
     private readonly List<string> eventLog = [];
     private IDisposable? eventSubscription;
@@ -35,18 +37,30 @@ public sealed class CallViewService : ICallViewService
     public string? CallFailedMessage { get; private set; }
 
     public bool IsMuted { get; private set; }
+    public bool IsVideoMuted { get; private set; }
+
+    // Whether the CURRENT call actually offered video — an audio call never starts the camera
+    // session at all (no video "m=" line to negotiate a format against).
+    public bool CurrentCallIncludesVideo { get; private set; }
+
+    public string? RemoteVideoDataUri { get; private set; }
 
     public IReadOnlyList<string> EventLog => this.eventLog;
 
-    public CallViewService(ICallClient callClient, IAudioTonePlayerBroker audioTonePlayerBroker)
+    public CallViewService(
+        ICallClient callClient,
+        IAudioTonePlayerBroker audioTonePlayerBroker,
+        IVideoFramePreviewSource videoFramePreviewSource)
     {
         this.callClient = callClient;
         this.audioTonePlayerBroker = audioTonePlayerBroker;
+        this.videoFramePreviewSource = videoFramePreviewSource;
     }
 
     public ValueTask InitializeAsync()
     {
         this.eventSubscription = this.callClient.StreamEvents().Subscribe(this.OnCallEvent);
+        this.videoFramePreviewSource.RemoteFrameDataUriReady += this.OnRemoteFrameDataUriReady;
         return ValueTask.CompletedTask;
     }
 
@@ -77,18 +91,23 @@ public sealed class CallViewService : ICallViewService
         this.OnStateChanged();
     }
 
-    public async ValueTask PlaceCallAsync()
+    public ValueTask PlaceAudioCallAsync() => this.PlaceCallAsync(includeVideo: false);
+
+    public ValueTask PlaceVideoCallAsync() => this.PlaceCallAsync(includeVideo: true);
+
+    private async ValueTask PlaceCallAsync(bool includeVideo)
     {
         if (string.IsNullOrWhiteSpace(this.TargetExtension))
         {
             return;
         }
 
+        this.CurrentCallIncludesVideo = includeVideo;
         await this.ShowDialingAsync(this.TargetExtension);
 
         try
         {
-            this.currentCallHandle = await this.callClient.PlaceCallAsync(this.TargetExtension, includeVideo: false);
+            this.currentCallHandle = await this.callClient.PlaceCallAsync(this.TargetExtension, includeVideo);
         }
         catch (Exception exception)
         {
@@ -186,6 +205,35 @@ public sealed class CallViewService : ICallViewService
         this.OnStateChanged();
     }
 
+    public async ValueTask ToggleVideoMuteAsync()
+    {
+        try
+        {
+            if (this.IsVideoMuted)
+            {
+                await this.callClient.UnmuteVideoAsync();
+            }
+            else
+            {
+                await this.callClient.MuteVideoAsync();
+            }
+
+            this.IsVideoMuted = !this.IsVideoMuted;
+        }
+        catch (Exception exception)
+        {
+            this.LogEvent($"Video toggle failed: {exception.Message}");
+        }
+
+        this.OnStateChanged();
+    }
+
+    private void OnRemoteFrameDataUriReady(string dataUri)
+    {
+        this.RemoteVideoDataUri = dataUri;
+        this.OnStateChanged();
+    }
+
     private void OnCallEvent(CallClientEvent callEvent)
     {
         this.LogEvent($"{callEvent.EventType}");
@@ -223,7 +271,10 @@ public sealed class CallViewService : ICallViewService
         await this.audioTonePlayerBroker.StopAsync();
         this.State = CallScreenState.Setup;
         this.IsMuted = false;
+        this.IsVideoMuted = false;
+        this.CurrentCallIncludesVideo = false;
         this.CallFailedMessage = null;
+        this.RemoteVideoDataUri = null;
     }
 
     private async ValueTask ShowDialingAsync(string extensionValue)
@@ -291,6 +342,7 @@ public sealed class CallViewService : ICallViewService
     public void Dispose()
     {
         this.eventSubscription?.Dispose();
+        this.videoFramePreviewSource.RemoteFrameDataUriReady -= this.OnRemoteFrameDataUriReady;
         this.StopCallTimer();
     }
 }
