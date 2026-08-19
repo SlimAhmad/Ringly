@@ -69,6 +69,13 @@
         <!-- Cross-platform (Android + Windows) audio playback for the dial/ring tones — same
              package/purpose as Ringly.Samples.Maui's csproj. -->
         <PackageReference Include="Plugin.Maui.Audio" Version="4.0.0" />
+        <!-- Camera capture for video calling — CameraView is only actually used on Windows here
+             (see MainPage.xaml's own comment); Android's video capture is headless (CameraX
+             directly, no Shiny CameraView), but UseShinyCamera() still needs this package
+             referenced on both platforms to register its handlers. -->
+        <PackageReference Include="Shiny.Maui.Controls.Camera" Version="1.0.2" />
+        <!-- Pure managed C# VP8 codec for video calling — same package Ringly.Samples.Maui uses. -->
+        <PackageReference Include="SIPSorcery.VP8" Version="10.0.15" />
     </ItemGroup>
 
     <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
@@ -95,10 +102,15 @@
 
     <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
         <Compile Include="..\Ringly.Samples.Maui\Platforms\Windows\CustomWindowsAudioEndPoint.cs" Link="Platforms\Windows\CustomWindowsAudioEndPoint.cs" />
+        <Compile Include="..\Ringly.Samples.Maui\Platforms\Windows\CustomWindowsVideoEndPoint.cs" Link="Platforms\Windows\CustomWindowsVideoEndPoint.cs" />
     </ItemGroup>
 
     <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
         <Compile Include="..\Ringly.Samples.Maui\Platforms\Android\AndroidAudioEndPoint.cs" Link="Platforms\Android\AndroidAudioEndPoint.cs" />
+        <!-- Headless CameraX capture (no Shiny CameraView needed) — see MainPage.xaml's own
+             comment for why Android and Windows take different capture paths in this sample. -->
+        <Compile Include="..\Ringly.Samples.Maui\Platforms\Android\AndroidCameraXVideoEndPoint.cs" Link="Platforms\Android\AndroidCameraXVideoEndPoint.cs" />
+        <Compile Include="..\Ringly.Samples.Maui\Platforms\Android\IAndroidVideoCaptureEndPoint.cs" Link="Platforms\Android\IAndroidVideoCaptureEndPoint.cs" />
     </ItemGroup>
 
 </Project>

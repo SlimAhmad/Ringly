@@ -1,14 +1,30 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:local="clr-namespace:Ringly.Samples.BlazorHybrid"
              xmlns:components="clr-namespace:Ringly.Samples.BlazorHybrid.Components"
+             xmlns:shiny="clr-namespace:Shiny.Maui.Controls.Camera;assembly=Shiny.Maui.Controls.Camera"
              x:Class="Ringly.Samples.BlazorHybrid.MainPage">
 
-    <BlazorWebView x:Name="blazorWebView" HostPage="wwwroot/index.html">
-        <BlazorWebView.RootComponents>
-            <RootComponent Selector="#app" ComponentType="{x:Type components:Routes}" />
-        </BlazorWebView.RootComponents>
-    </BlazorWebView>
+    <Grid>
+        <BlazorWebView x:Name="blazorWebView" HostPage="wwwroot/index.html">
+            <BlazorWebView.RootComponents>
+                <RootComponent Selector="#app" ComponentType="{x:Type components:Routes}" />
+            </BlazorWebView.RootComponents>
+        </BlazorWebView>
+
+        <!-- Windows-only local camera preview, layered on top of the BlazorWebView — Blazor
+             markup can't host a native MAUI View directly (BlazorWebView renders HTML in a
+             WebView, not a MAUI visual tree), so CustomWindowsVideoEndPoint's required CameraView
+             (see its own AttachCameraView comment) lives here instead and is wired up in
+             MainPage.xaml.cs. Android's video capture (AndroidCameraXVideoEndPoint) is headless —
+             no CameraView needed — so this stays empty/unused there. Small and corner-anchored so
+             it doubles as a real local-preview overlay rather than a purely hidden capture
+             surface. -->
+        <shiny:CameraView x:Name="LocalCameraView"
+                           WidthRequest="140" HeightRequest="105"
+                           HorizontalOptions="End" VerticalOptions="End"
+                           Margin="0,0,16,16" />
+    </Grid>
 
 </ContentPage>
