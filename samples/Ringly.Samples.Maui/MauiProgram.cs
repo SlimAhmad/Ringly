@@ -58,7 +58,7 @@ public static class MauiProgram
         // update both this and turnserver.conf together and restart coturn in one step, instead
         // of editing by hand — it looks for the "ringly:lan-ip" marker below to find this line.
         // ringly:lan-ip
-        const string CurrentLanHostAddress = "10.205.226.49";
+        const string CurrentLanHostAddress = "10.160.118.49";
 
         string host = DeviceInfo.Platform == DevicePlatform.Android
             ? (DeviceInfo.Current.DeviceType == DeviceType.Virtual ? "10.0.2.2" : CurrentLanHostAddress)
@@ -247,13 +247,29 @@ public static class MauiProgram
     // ConnectivityManager/LinkProperties instead) but still functions — a fine tradeoff for a
     // getting-started sample versus the added complexity of the newer API. Returns the device's
     // current Wi-Fi IPv4 address, or null if Wi-Fi isn't connected (IpAddress reads 0 in that
-    // case) so callers can fall back to leaving BindAddress unset entirely.
+    // case) or the call fails for any reason, so callers can fall back to leaving BindAddress
+    // unset entirely rather than this taking down app startup. Confirmed live: without
+    // ACCESS_WIFI_STATE declared in AndroidManifest.xml, WifiManager.ConnectionInfo throws
+    // Java.Lang.SecurityException at startup — CreateMauiApp() runs this before the app has any
+    // UI to show an error in, so an uncaught exception here is a silent full crash on launch, not
+    // a graceful "no video/audio this call" degradation the way a missing camera/mic permission
+    // is elsewhere in this file. Caught broadly (not just SecurityException) since this is a
+    // best-effort read with a safe fallback already defined either way.
     private static string? GetAndroidWifiIPv4Address()
     {
-        using var wifiManager = global::Android.App.Application.Context
-            .GetSystemService(global::Android.Content.Context.WifiService) as global::Android.Net.Wifi.WifiManager;
+        int rawAddress;
 
-        int rawAddress = wifiManager?.ConnectionInfo?.IpAddress ?? 0;
+        try
+        {
+            using var wifiManager = global::Android.App.Application.Context
+                .GetSystemService(global::Android.Content.Context.WifiService) as global::Android.Net.Wifi.WifiManager;
+
+            rawAddress = wifiManager?.ConnectionInfo?.IpAddress ?? 0;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
 
         if (rawAddress == 0)
         {
