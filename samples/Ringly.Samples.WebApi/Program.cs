@@ -48,8 +48,16 @@ builder.Services.AddScoped<ICallCenterProvider, AsteriskCallCenterFoundationServ
 builder.Services.AddScoped<ClientCredentialsService>();
 
 // Bridges calls a client dials directly (not just server-originated ones via /calls) — see
-// RideHailingCallRouter's own comment for why this is needed.
-builder.Services.AddHostedService<RideHailingCallRouter>();
+// RideHailingCallRouter's own comment for why this is needed. Registered as a Singleton (not via
+// the AddHostedService<T>() shorthand) so TelephonyCallTrackingService can also resolve it by its
+// ICallLifecycleEventSource interface — AddHostedService<T>() alone only exposes T as IHostedService.
+builder.Services.AddSingleton<RideHailingCallRouter>();
+builder.Services.AddSingleton<ICallLifecycleEventSource>(sp => sp.GetRequiredService<RideHailingCallRouter>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RideHailingCallRouter>());
+
+// Writes/updates TelephonyCall rows as real calls progress — see TelephonyCallTrackingService's
+// own comment for why this is a separate service rather than folded into RideHailingCallRouter.
+builder.Services.AddHostedService<TelephonyCallTrackingService>();
 
 var app = builder.Build();
 
