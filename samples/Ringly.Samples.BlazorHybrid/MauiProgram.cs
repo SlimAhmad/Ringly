@@ -6,7 +6,9 @@ using Plugin.Maui.Audio;
 using Shiny;
 using Ringly.Client.Abstractions;
 using Ringly.Client.SipSorcery;
+using Ringly.Samples.BlazorHybrid.Brokers.Apis;
 using Ringly.Samples.BlazorHybrid.ViewServices.Calls;
+using Ringly.Samples.BlazorHybrid.ViewServices.Support;
 using Ringly.Samples.Maui;
 
 namespace Ringly.Samples.BlazorHybrid;
@@ -74,6 +76,15 @@ public static class MauiProgram
             }
 #endif
         });
+
+        // Ringly.Samples.WebApi's own default dev port (Properties/launchSettings.json) — same
+        // host-resolution rules as the SIP registrar above (this app and the WebApi are assumed
+        // to run on the same dev machine/network).
+        builder.Services.Configure<SupportApiOptions>(options =>
+            options.BaseUrl = $"http://{host}:5000");
+
+        builder.Services.AddSingleton<ISupportApiBroker, SupportApiBroker>();
+        builder.Services.AddSingleton<ISupportViewService, SupportViewService>();
 
 #if WINDOWS
         // Real microphone/speaker access via the MAUI sample's CustomWindowsAudioEndPoint (linked
