@@ -1,11 +1,9 @@
 using Ringly.Abstractions;
-using Ringly.Abstractions.Models;
 using Ringly.Asterisk.Brokers;
 using Ringly.Asterisk.Services.Foundations.CallSessions;
 using Ringly.Asterisk.Services.Foundations.SipEndpoints;
 using Ringly.Asterisk.Services.Processings.Provisioning;
 using Ringly.CallCenter.Abstractions;
-using Ringly.CallCenter.Abstractions.Models;
 using Ringly.CallCenter.Asterisk.Services.Foundations.Queues;
 using Ringly.Samples.WebApi;
 
@@ -48,39 +46,8 @@ if (app.Environment.IsDevelopment())
 
 app.MapControllers();
 
-// Walks through the same flow as docs/getting-started.md, as real HTTP endpoints. Client
-// credentials (add/retrieve/remove) are now ClientsController — see Controllers/.
-
-app.MapPost("/queues", async (CreateQueueRequest request, ICallCenterProvider callCenterProvider) =>
-{
-    HoldingBridge holdingBridge = await callCenterProvider.CreateQueueAsync(
-        new QueueConfig { Name = request.Name, MusicOnHoldClass = request.MusicOnHoldClass ?? string.Empty });
-
-    return Results.Ok(holdingBridge);
-})
-.WithName("CreateQueue");
-
-app.MapPost("/calls", async (StartCallRequest request, ICallProvider callProvider) =>
-{
-    CallSession session = await callProvider.StartCallSessionAsync(
-        new CallParticipant { SipExtension = request.PartyAExtension },
-        new CallParticipant { SipExtension = request.PartyBExtension });
-
-    return Results.Ok(session);
-})
-.WithName("StartCall");
-
-app.MapPost("/support/{clientId:guid}/route", async (
-    Guid clientId,
-    string queueName,
-    ICallProvider callProvider) =>
-{
-    CallSession session = await callProvider.RouteToQueueAsync(clientId, queueName);
-    return Results.Ok(session);
-})
-.WithName("RouteToQueue");
+// Walks through the same flow as docs/getting-started.md, as real HTTP endpoints. Every route is
+// now a controller — see Controllers/: ClientsController (credentials), QueuesController,
+// CallsController, SupportController.
 
 app.Run();
-
-internal record CreateQueueRequest(string Name, string? MusicOnHoldClass);
-internal record StartCallRequest(string PartyAExtension, string PartyBExtension);
