@@ -58,7 +58,7 @@ public static class MauiProgram
         // update both this and turnserver.conf together and restart coturn in one step, instead
         // of editing by hand — it looks for the "ringly:lan-ip" marker below to find this line.
         // ringly:lan-ip
-        const string CurrentLanHostAddress = "10.160.118.49";
+        const string CurrentLanHostAddress = "192.168.1.92";
 
         string host = DeviceInfo.Platform == DevicePlatform.Android
             ? (DeviceInfo.Current.DeviceType == DeviceType.Virtual ? "10.0.2.2" : CurrentLanHostAddress)
