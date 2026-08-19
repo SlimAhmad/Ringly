@@ -187,20 +187,21 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
 
                 this.analysisExecutor ??= Java.Util.Concurrent.Executors.NewSingleThreadExecutor();
 
-                // Confirmed live: leaving CameraX at its default analysis resolution (640x480 on
-                // this device, logged via "Native CameraX Analyze() called for the first time")
-                // produced a real encode rate of only ~1-2fps even after throttling to a 15fps
-                // ceiling (PR #183) — the ceiling never mattered because a single SIPSorcery.VP8
-                // (software, no hardware acceleration) EncodeVideo call at 640x480 was itself
-                // taking long enough to dominate the whole window, blocking the single-threaded
-                // analysis executor and starving AndroidAudioEndPoint regardless of how rarely it
-                // was invoked. Targeting 320x240 (1/4 the pixels, still a multiple of 16 so it
-                // passes the dimension check below unmodified) cuts the per-frame encode cost
-                // proportionally; CameraX treats this as a hint and may pick the nearest supported
-                // resolution rather than this exact one.
+                // Deliberately NOT calling SetTargetResolution here (tried it, reverted — see
+                // issue #187): it's a deprecated best-effort hint, and CameraX resolves it against
+                // whatever discrete stream configurations the device's camera HAL actually
+                // advertises, picking the "closest" one by its own aspect-ratio/area heuristic —
+                // NOT necessarily anything close to or smaller than the value passed in. Confirmed
+                // live on this device: requesting 320x240 got CameraX to bind 1088x1088 instead
+                // (~3.9x MORE pixels than the unset default of 640x480, logged via "Native CameraX
+                // Analyze() called for the first time"), which made the already-slow software VP8
+                // encode dramatically worse — encode rate dropped further, audio concealment got
+                // worse, and the app crashed under the load. Left at CameraX's own default (640x480
+                // on this device) until a real fix (e.g. downscaling the captured frame ourselves
+                // in ConvertYuv420888ToI420, or CameraX's newer ResolutionSelector API with an
+                // explicit allowed-resolutions list) is implemented and verified live.
                 this.imageAnalysis = new ImageAnalysis.Builder()
                     .SetBackpressureStrategy(ImageAnalysis.StrategyKeepOnlyLatest!)!
-                    .SetTargetResolution(new global::Android.Util.Size(320, 240))!
                     .Build();
                 this.imageAnalysis!.SetAnalyzer(this.analysisExecutor!, new NativeFrameAnalyzer(this));
 
