@@ -1,0 +1,75 @@
+using FluentAssertions;
+using Microsoft.Data.SqlClient;
+using Moq;
+using Ringly.Samples.WebApi.Models.Foundations.TelephonyCalls.Exceptions;
+
+namespace Ringly.Samples.WebApi.Tests.Unit.Services.Foundations.TelephonyCalls;
+
+public partial class TelephonyCallServiceTests
+{
+    [Fact]
+    public async Task ShouldThrowCriticalDependencyExceptionOnRemoveByIdIfSqlErrorOccursAndLogItAsync()
+    {
+        // given
+        Guid randomTelephonyCallId = Guid.NewGuid();
+        SqlException sqlException = CreateSqlException();
+
+        this.storageBrokerMock.Setup(broker =>
+            broker.SelectTelephonyCallByIdAsync(randomTelephonyCallId))
+                .ThrowsAsync(sqlException);
+
+        // when
+        Func<Task> removeTask = async () =>
+            await this.telephonyCallService.RemoveTelephonyCallByIdAsync(randomTelephonyCallId);
+
+        // then
+        TelephonyCallDependencyException actualException =
+            await Assert.ThrowsAsync<TelephonyCallDependencyException>(removeTask);
+
+        actualException.InnerException.Should().BeOfType<FailedStorageTelephonyCallDependencyException>();
+
+        this.storageBrokerMock.Verify(broker =>
+            broker.SelectTelephonyCallByIdAsync(randomTelephonyCallId),
+                Times.Once);
+
+        this.loggingBrokerMock.Verify(broker =>
+            broker.LogCriticalAsync(It.Is(SameExceptionAs(actualException))),
+                Times.Once);
+
+        this.storageBrokerMock.VerifyNoOtherCalls();
+        this.loggingBrokerMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task ShouldThrowServiceExceptionOnRemoveByIdIfServiceErrorOccursAndLogItAsync()
+    {
+        // given
+        Guid randomTelephonyCallId = Guid.NewGuid();
+        var serviceException = new Exception("service error");
+
+        this.storageBrokerMock.Setup(broker =>
+            broker.SelectTelephonyCallByIdAsync(randomTelephonyCallId))
+                .ThrowsAsync(serviceException);
+
+        // when
+        Func<Task> removeTask = async () =>
+            await this.telephonyCallService.RemoveTelephonyCallByIdAsync(randomTelephonyCallId);
+
+        // then
+        TelephonyCallServiceException actualException =
+            await Assert.ThrowsAsync<TelephonyCallServiceException>(removeTask);
+
+        actualException.InnerException.Should().BeOfType<FailedTelephonyCallServiceException>();
+
+        this.storageBrokerMock.Verify(broker =>
+            broker.SelectTelephonyCallByIdAsync(randomTelephonyCallId),
+                Times.Once);
+
+        this.loggingBrokerMock.Verify(broker =>
+            broker.LogErrorAsync(It.Is(SameExceptionAs(actualException))),
+                Times.Once);
+
+        this.storageBrokerMock.VerifyNoOtherCalls();
+        this.loggingBrokerMock.VerifyNoOtherCalls();
+    }
+}
