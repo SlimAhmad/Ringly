@@ -6,6 +6,7 @@ using Plugin.Maui.Audio;
 using Shiny;
 using Ringly.Client.Abstractions;
 using Ringly.Client.SipSorcery;
+using Ringly.Samples.BlazorHybrid.ViewServices.Calls;
 using Ringly.Samples.Maui;
 
 namespace Ringly.Samples.BlazorHybrid;
@@ -109,6 +110,10 @@ public static class MauiProgram
 #endif
 
         builder.Services.AddSingleton<ICallClient, SipSorceryCallClient>();
+
+        // The single dependency CallScreen (the Core Component) integrates with — see
+        // ICallViewService.cs's own comment.
+        builder.Services.AddSingleton<ICallViewService, CallViewService>();
 
         MauiApp app = builder.Build();
 
