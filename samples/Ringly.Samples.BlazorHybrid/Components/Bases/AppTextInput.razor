@@ -1,0 +1,24 @@
+@* Base component — wraps the native <input> element only, exposing @bind-Value support.
+   No business logic (see AppButton.razor's own comment for the rule this follows). *@
+
+<input class="@CssClass" placeholder="@Placeholder" type="@Type" value="@Value" @oninput="OnInputAsync" />
+
+@code {
+    [Parameter]
+    public string CssClass { get; set; } = string.Empty;
+
+    [Parameter]
+    public string Placeholder { get; set; } = string.Empty;
+
+    [Parameter]
+    public string Type { get; set; } = "text";
+
+    [Parameter]
+    public string Value { get; set; } = string.Empty;
+
+    [Parameter]
+    public EventCallback<string> ValueChanged { get; set; }
+
+    private Task OnInputAsync(ChangeEventArgs e) =>
+        this.ValueChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty);
+}
