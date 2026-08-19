@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Reactive.Linq;
+using System.Reactive.Subjects;
 using Ringly.Abstractions.Models;
 using Ringly.Asterisk.Brokers;
 using Ringly.Asterisk.Models;
@@ -12,7 +14,7 @@ namespace Ringly.Samples.WebApi;
 // timeout). StartCallSessionAsync/RouteToQueueAsync don't need this router — they originate and
 // bridge both their own channels directly via the broker's HTTP API, with no dependency on
 // Stasis events at all.
-public class RideHailingCallRouter : BackgroundService
+public class RideHailingCallRouter : BackgroundService, ICallLifecycleEventSource
 {
     private const string MixingBridgeType = "mixing";
     private const string UpChannelState = "Up";
@@ -37,6 +39,16 @@ public class RideHailingCallRouter : BackgroundService
     // after connect. On either channel's StasisEnd, its peer (looked up here) gets hung up and both
     // entries removed — see HandleStasisEndAsync.
     private readonly ConcurrentDictionary<string, string> peerChannelIdByChannelId = new();
+
+    // Channel ID (either leg) -> the CALLER's own channel ID, i.e. the stable CallId used on
+    // CallLifecycleEvent — populated for both legs at dial time (same dual-key pattern as
+    // peerChannelIdByChannelId above), since HandleStasisEndAsync only ever sees a single raw
+    // channel ID and needs to recover the original CallId regardless of which leg ends first.
+    private readonly ConcurrentDictionary<string, string> callIdByChannelId = new();
+
+    private readonly Subject<CallLifecycleEvent> callLifecycleEvents = new();
+
+    public IObservable<CallLifecycleEvent> StreamCallLifecycleEvents() => this.callLifecycleEvents.AsObservable();
 
     private sealed record PendingCall(string BridgeId, string CallerChannelId);
 
@@ -144,12 +156,23 @@ public class RideHailingCallRouter : BackgroundService
         await this.asteriskBroker.RingChannelAsync(stasisStartEvent.ChannelId);
         Bridge bridge = await this.asteriskBroker.InsertBridgeAsync(MixingBridgeType);
 
+        this.callIdByChannelId[stasisStartEvent.ChannelId] = stasisStartEvent.ChannelId;
+
+        this.callLifecycleEvents.OnNext(new CallLifecycleEvent(
+            CallId: stasisStartEvent.ChannelId,
+            Phase: CallLifecyclePhase.Initiated,
+            CallerExtension: stasisStartEvent.CallerExtension,
+            CalleeExtension: targetExtension,
+            AsteriskBridgeId: bridge.Id));
+
         Channel targetChannel = await this.asteriskBroker.InsertChannelAsync($"PJSIP/{targetExtension}");
         this.pendingCallByCalleeChannelId[targetChannel.ChannelId] =
             new PendingCall(bridge.Id, stasisStartEvent.ChannelId);
 
         this.peerChannelIdByChannelId[stasisStartEvent.ChannelId] = targetChannel.ChannelId;
         this.peerChannelIdByChannelId[targetChannel.ChannelId] = stasisStartEvent.ChannelId;
+
+        this.callIdByChannelId[targetChannel.ChannelId] = stasisStartEvent.ChannelId;
     }
 
     private async Task HandleStasisEndAsync(StasisEndEvent stasisEndEvent)
@@ -162,6 +185,12 @@ public class RideHailingCallRouter : BackgroundService
         this.peerChannelIdByChannelId.TryRemove(peerChannelId, out _);
         this.pendingCallByCalleeChannelId.TryRemove(stasisEndEvent.ChannelId, out _);
         this.pendingCallByCalleeChannelId.TryRemove(peerChannelId, out _);
+
+        if (this.callIdByChannelId.TryRemove(stasisEndEvent.ChannelId, out string? callId))
+        {
+            this.callIdByChannelId.TryRemove(peerChannelId, out _);
+            this.callLifecycleEvents.OnNext(new CallLifecycleEvent(CallId: callId, Phase: CallLifecyclePhase.Ended));
+        }
 
         // Best-effort: the peer may already be gone (e.g. both legs of a bridge left Stasis around
         // the same time, or the peer already hung up on its own) — ARI's DELETE 404s in that case,
@@ -182,6 +211,13 @@ public class RideHailingCallRouter : BackgroundService
             await this.asteriskBroker.AnswerChannelAsync(pendingCall.CallerChannelId);
             await this.asteriskBroker.AddChannelToBridgeAsync(pendingCall.BridgeId, pendingCall.CallerChannelId);
             await this.asteriskBroker.AddChannelToBridgeAsync(pendingCall.BridgeId, stateChangeEvent.ChannelId);
+
+            // pendingCall.CallerChannelId IS the CallId (the caller's own channel ID) — no lookup
+            // needed here, unlike HandleStasisEndAsync below which only ever sees a single raw
+            // channel ID that could belong to either leg.
+            this.callLifecycleEvents.OnNext(new CallLifecycleEvent(
+                CallId: pendingCall.CallerChannelId,
+                Phase: CallLifecyclePhase.Answered));
         }
     }
 }
