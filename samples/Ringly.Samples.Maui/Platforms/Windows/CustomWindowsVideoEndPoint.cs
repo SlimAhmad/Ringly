@@ -45,13 +45,25 @@ public sealed class CustomWindowsVideoEndPoint : IVideoSource, IVideoSink, IFram
 
     // Video RTP typically runs a fixed 90kHz clock regardless of actual capture frame rate.
     // Frames arrive whenever the camera pipeline delivers them (no timer of our own pacing
-    // capture), so this assumes a nominal 30fps for the RTP timestamp increment per frame — an
-    // approximation reasonable for a first working slice; revisit with real elapsed-time-based
+    // capture), so this assumes a nominal frame rate for the RTP timestamp increment per frame —
+    // an approximation reasonable for a first working slice; revisit with real elapsed-time-based
     // timestamps if live testing shows playback pacing issues, the same way audio's pacing bugs
     // were only found and fixed via real testing, not guessed up front.
     private const uint VideoClockRateHz = 90000;
-    private const uint AssumedFrameRate = 30;
-    private const uint AssumedDurationRtpUnits = VideoClockRateHz / AssumedFrameRate;
+
+    // Throttled from an unthrottled ~30fps (issue #195) — confirmed live via paired Windows/Android
+    // logs from the same call that Android was only decoding ~12% of what Windows sent (Windows
+    // "Encoded 60/2s" vs Android "Decoded 5-7/2s"), with large RTP sequence-number gaps on Android's
+    // video stream confirming the rest was simply lost. Android's own outbound video is throttled
+    // to 15fps for the same reason (AndroidCameraXVideoEndPoint, PR #183) and looks comparatively
+    // smooth on Windows as a result — sending Windows' stronger CPU less data than it can actually
+    // display doesn't help either side; matching Android's own target here means Windows stops
+    // producing video Android's weaker CPU (and the rest of its real-time audio/SIP/ICE pipeline)
+    // can't keep up with in the first place, rather than relying on the network/decoder to silently
+    // drop the excess.
+    private const uint TargetEncodeFrameRate = 15;
+    private const uint AssumedDurationRtpUnits = VideoClockRateHz / TargetEncodeFrameRate;
+    private static readonly TimeSpan MinEncodeInterval = TimeSpan.FromSeconds(1.0 / TargetEncodeFrameRate);
 
     // Not static readonly — confirmed live in AndroidAudioEndPoint/CustomWindowsAudioEndPoint
     // that a static readonly logger field can permanently capture SIPSorcery's no-op default
@@ -74,6 +86,7 @@ public sealed class CustomWindowsVideoEndPoint : IVideoSource, IVideoSink, IFram
     private CameraView? attachedCameraView;
     private bool isSourcePaused;
     private bool isSinkPaused;
+    private DateTime lastEncodeAt = DateTime.MinValue;
 
     private int framesEncodedSinceLog;
     private int framesSkippedSinceLog;
@@ -141,6 +154,13 @@ public sealed class CustomWindowsVideoEndPoint : IVideoSource, IVideoSink, IFram
             this.LogEncodeSummaryIfDue();
             return ValueTask.FromResult<IReadOnlyList<OverlayBox>?>(null);
         }
+
+        if (this.lastEncodeAt != DateTime.MinValue && DateTime.UtcNow - this.lastEncodeAt < MinEncodeInterval)
+        {
+            return ValueTask.FromResult<IReadOnlyList<OverlayBox>?>(null);
+        }
+
+        this.lastEncodeAt = DateTime.UtcNow;
 
         try
         {
