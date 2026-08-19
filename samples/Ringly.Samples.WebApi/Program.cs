@@ -7,6 +7,7 @@ using Ringly.CallCenter.Abstractions;
 using Ringly.CallCenter.Asterisk.Services.Foundations.Queues;
 using Ringly.Samples.WebApi;
 using Ringly.Samples.WebApi.Brokers.Storages;
+using Ringly.Samples.WebApi.Services.Foundations.TelephonyCalls;
 using Ringly.Samples.WebApi.Services.Foundations.TelephonyDevices;
 using Ringly.Samples.WebApi.Services.Foundations.TelephonyIdentities;
 
@@ -38,6 +39,7 @@ builder.Services.AddScoped<IAsteriskSipEndpointConfigFoundationService, Asterisk
 builder.Services.AddScoped<IStorageBroker, StorageBroker>();
 builder.Services.AddScoped<ITelephonyIdentityService, TelephonyIdentityService>();
 builder.Services.AddScoped<ITelephonyDeviceService, TelephonyDeviceService>();
+builder.Services.AddScoped<ITelephonyCallService, TelephonyCallService>();
 builder.Services.AddScoped<ICallProvisioningService, CallProvisioningService>();
 builder.Services.AddScoped<ICallProvider, AsteriskCallFoundationService>();
 builder.Services.AddScoped<ICallCenterProvider, AsteriskCallCenterFoundationService>();

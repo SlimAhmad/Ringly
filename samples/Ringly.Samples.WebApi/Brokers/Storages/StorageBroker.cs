@@ -32,6 +32,7 @@ public partial class StorageBroker : EFxceptionsContext, IStorageBroker
     {
         this.ConfigureTelephonyIdentities(modelBuilder);
         this.ConfigureTelephonyDevices(modelBuilder);
+        this.ConfigureTelephonyCalls(modelBuilder);
     }
 
     private async ValueTask<T> InsertAsync<T>(T entity) where T : class
