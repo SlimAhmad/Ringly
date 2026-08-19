@@ -1,6 +1,4 @@
 using System.Net;
-using Android.Hardware.Camera2;
-using AndroidX.Camera.Camera2.InterOp;
 using AndroidX.Camera.Core;
 using AndroidX.Camera.Lifecycle;
 using AndroidX.Core.Content;
@@ -240,20 +238,18 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
                 // on this device) until a real fix (e.g. downscaling the captured frame ourselves
                 // in ConvertYuv420888ToI420, or CameraX's newer ResolutionSelector API with an
                 // explicit allowed-resolutions list) is implemented and verified live.
-                var imageAnalysisBuilder = new ImageAnalysis.Builder()
-                    .SetBackpressureStrategy(ImageAnalysis.StrategyKeepOnlyLatest!)!;
-
-                // Forces AE (auto-exposure) antibanding to Auto explicitly, rather than trusting
-                // whatever the device's own default happens to be — reported live as a flickering
-                // brightness/light artifact in the video once frames were finally arriving fast
-                // enough for it to be visible (earlier low frame rates, #185, likely masked it).
-                // Classic symptom of the camera's exposure timing not being synced to the AC mains
-                // frequency (50/60Hz) of indoor fluorescent/LED lighting — this is the standard
-                // Camera2/CameraX fix.
-                new Camera2Interop.Extender(imageAnalysisBuilder)
-                    .SetCaptureRequestOption(CaptureRequest.ControlAeAntibandingMode!, (Java.Lang.Integer)(int)ControlAEAntibanding.ModeAuto);
-
-                this.imageAnalysis = imageAnalysisBuilder.Build();
+                // Deliberately NOT forcing an explicit CaptureRequest.ControlAeAntibandingMode
+                // (tried ControlAEAntibanding.ModeAuto in #206, reverted — see #207): live testing
+                // showed it made the reported flickering-light artifact WORSE than this device's
+                // own default, not better. Same lesson as #186/#187's SetTargetResolution revert —
+                // an explicit camera-HAL override chosen from general Camera2 knowledge rather than
+                // device-specific verification can easily fight whatever heuristic the device
+                // already uses instead of improving on it. Left at the device's own default;
+                // revisit with a specific (not "auto") antibanding frequency mode matching the
+                // deployment region's AC mains (50hz/60hz) only once verified live, not guessed.
+                this.imageAnalysis = new ImageAnalysis.Builder()
+                    .SetBackpressureStrategy(ImageAnalysis.StrategyKeepOnlyLatest!)!
+                    .Build();
                 this.imageAnalysis!.SetAnalyzer(this.analysisExecutor!, new NativeFrameAnalyzer(this));
 
                 var selector = new CameraSelector.Builder()
