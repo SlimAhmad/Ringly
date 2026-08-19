@@ -46,6 +46,16 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
     private const uint AssumedDurationRtpUnits = VideoClockRateHz / TargetEncodeFrameRate;
     private static readonly TimeSpan MinEncodeInterval = TimeSpan.FromSeconds(1.0 / TargetEncodeFrameRate);
 
+    // Caps the longest side actually handed to SIPSorcery.VP8's software encoder. Deliberately NOT
+    // done via CameraX's ImageAnalysis.SetTargetResolution (tried in #186, reverted in #187) — that
+    // API is only a best-effort hint CameraX resolves against whatever discrete stream
+    // configurations the device's camera HAL advertises, and on one real device asking for 320x240
+    // got back 1088x1088 instead (~3.9x more pixels), making the encode-cost problem this exists to
+    // fix dramatically worse. Downsampling the already-captured I420 buffer ourselves in
+    // OnFrameAnalyzed/DownsampleI420 below guarantees the encoder's actual input size regardless of
+    // what resolution CameraX's default analysis pipeline happens to choose on a given device.
+    private const int EncodeTargetLongestSide = 320;
+
     // Not static readonly — confirmed live (see AndroidAudioEndPoint/CustomWindowsAudioEndPoint)
     // that a static readonly logger field can permanently capture SIPSorcery's no-op default
     // logger if this class is constructed before SIPSorcery.LogFactory.Set() wires up the real
@@ -298,9 +308,28 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
 
             byte[] i420Sample = ConvertYuv420888ToI420(image, width, height);
 
+            int downsampleFactor = Math.Max(1, (int)Math.Round((double)Math.Max(width, height) / EncodeTargetLongestSide));
+            int encodeWidth = width;
+            int encodeHeight = height;
+
+            if (downsampleFactor > 1)
+            {
+                encodeWidth = (width / downsampleFactor / RequiredDimensionMultiple) * RequiredDimensionMultiple;
+                encodeHeight = (height / downsampleFactor / RequiredDimensionMultiple) * RequiredDimensionMultiple;
+
+                if (encodeWidth <= 0 || encodeHeight <= 0)
+                {
+                    this.framesSkippedSinceLog++;
+                    this.LogEncodeSummaryIfDue();
+                    return;
+                }
+
+                i420Sample = DownsampleI420(i420Sample, width, height, encodeWidth, encodeHeight);
+            }
+
             byte[] encodedSample = this.videoCodec.EncodeVideo(
-                width,
-                height,
+                encodeWidth,
+                encodeHeight,
                 i420Sample,
                 VideoPixelFormatsEnum.I420,
                 VideoCodecsEnum.VP8);
@@ -344,6 +373,55 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
         CopyPlane(planes[2], chromaWidth, chromaHeight, i420, ySize + chromaSize);
 
         return i420;
+    }
+
+    // Nearest-neighbor point-sampling downscale of an already-assembled I420 buffer — used instead
+    // of CameraX's own SetTargetResolution to guarantee the actual size handed to the VP8 encoder
+    // (see EncodeTargetLongestSide's comment for why). Cheap relative to the encode it's protecting
+    // against: only touches targetWidth*targetHeight*1.5 output samples, not the full source frame.
+    private static byte[] DownsampleI420(byte[] source, int sourceWidth, int sourceHeight, int targetWidth, int targetHeight)
+    {
+        int sourceChromaWidth = sourceWidth / 2;
+        int sourceChromaHeight = sourceHeight / 2;
+        int sourceYSize = sourceWidth * sourceHeight;
+        int sourceChromaSize = sourceChromaWidth * sourceChromaHeight;
+
+        int targetChromaWidth = targetWidth / 2;
+        int targetChromaHeight = targetHeight / 2;
+        int targetYSize = targetWidth * targetHeight;
+        int targetChromaSize = targetChromaWidth * targetChromaHeight;
+
+        var target = new byte[targetYSize + (2 * targetChromaSize)];
+
+        DownsamplePlane(source, 0, sourceWidth, sourceHeight, target, 0, targetWidth, targetHeight);
+
+        DownsamplePlane(
+            source, sourceYSize, sourceChromaWidth, sourceChromaHeight,
+            target, targetYSize, targetChromaWidth, targetChromaHeight);
+
+        DownsamplePlane(
+            source, sourceYSize + sourceChromaSize, sourceChromaWidth, sourceChromaHeight,
+            target, targetYSize + targetChromaSize, targetChromaWidth, targetChromaHeight);
+
+        return target;
+    }
+
+    private static void DownsamplePlane(
+        byte[] source, int sourceOffset, int sourceWidth, int sourceHeight,
+        byte[] target, int targetOffset, int targetWidth, int targetHeight)
+    {
+        for (int y = 0; y < targetHeight; y++)
+        {
+            int sourceY = y * sourceHeight / targetHeight;
+            int sourceRowOffset = sourceOffset + (sourceY * sourceWidth);
+            int targetRowOffset = targetOffset + (y * targetWidth);
+
+            for (int x = 0; x < targetWidth; x++)
+            {
+                int sourceX = x * sourceWidth / targetWidth;
+                target[targetRowOffset + x] = source[sourceRowOffset + sourceX];
+            }
+        }
     }
 
     private static void CopyPlane(IImageProxyPlaneProxy plane, int planeWidth, int planeHeight, byte[] destination, int destinationOffset)
