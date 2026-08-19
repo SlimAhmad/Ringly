@@ -44,19 +44,25 @@ ON CONFLICT (id) DO NOTHING;
 -- those route responses back via the transaction's actually-observed source address, not
 -- the stored Contact. rewrite_contact=yes makes Asterisk store the real observed source
 -- (e.g. the Docker bridge gateway address) instead of trusting the client's self-report.
+-- rtp_timeout/rtp_timeout_hold are the backstop for a client that crashes or is force-killed
+-- without sending any SIP signaling at all (no BYE, no CANCEL) — see
+-- AsteriskBroker.Credentials.cs's InsertSipEndpointObjectAsync for the full explanation. Confirmed
+-- live: without these, a single session's worth of crashed test runs left 14 channels stuck open
+-- for over an hour, and once an endpoint accrued enough of them, Asterisk started instantly
+-- declining (SIP 603) every new call to it.
 INSERT INTO ps_endpoints (
     id, context, disallow, allow, auth, aors, webrtc, rewrite_contact,
-    set_var
+    set_var, rtp_timeout, rtp_timeout_hold
 )
 VALUES
     ('1000', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1000', '1000', 'yes', 'yes',
-     'PJSIP_TRANSFER_HANDLING()=ari-only'),
+     'PJSIP_TRANSFER_HANDLING()=ari-only', 30, 60),
     ('1001', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1001', '1001', 'yes', 'yes',
-     'PJSIP_TRANSFER_HANDLING()=ari-only'),
+     'PJSIP_TRANSFER_HANDLING()=ari-only', 30, 60),
     ('1002', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1002', '1002', 'yes', 'yes',
-     'PJSIP_TRANSFER_HANDLING()=ari-only'),
+     'PJSIP_TRANSFER_HANDLING()=ari-only', 30, 60),
     ('1003', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1003', '1003', 'yes', 'yes',
-     'PJSIP_TRANSFER_HANDLING()=ari-only'),
+     'PJSIP_TRANSFER_HANDLING()=ari-only', 30, 60),
     ('1004', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1004', '1004', 'yes', 'yes',
-     'PJSIP_TRANSFER_HANDLING()=ari-only')
+     'PJSIP_TRANSFER_HANDLING()=ari-only', 30, 60)
 ON CONFLICT (id) DO NOTHING;

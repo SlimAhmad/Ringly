@@ -27,6 +27,17 @@ public class RideHailingCallRouter : BackgroundService
     // alone answered.
     private readonly ConcurrentDictionary<string, PendingCall> pendingCallByCalleeChannelId = new();
 
+    // Confirmed live: a client that crashes or is force-closed mid-call never sends a SIP BYE, and
+    // this router previously had no way to notice — the callee leg it dialed (or, once answered,
+    // either leg of the bridge) just sat open in Asterisk indefinitely. 14 such leaked channels
+    // accumulated over one session's worth of crashed test runs, and once an endpoint had enough of
+    // them, Asterisk started instantly declining (SIP 603) every new call to it — no ringing at all
+    // on either side. Populated for BOTH directions the instant a call is dialed (not just once
+    // answered) so a caller vanishing before the callee even rings is caught too, not only crashes
+    // after connect. On either channel's StasisEnd, its peer (looked up here) gets hung up and both
+    // entries removed — see HandleStasisEndAsync.
+    private readonly ConcurrentDictionary<string, string> peerChannelIdByChannelId = new();
+
     private sealed record PendingCall(string BridgeId, string CallerChannelId);
 
     public RideHailingCallRouter(IAsteriskBroker asteriskBroker, ILogger<RideHailingCallRouter> logger)
@@ -40,12 +51,16 @@ public class RideHailingCallRouter : BackgroundService
         IDisposable stasisSubscription = this.asteriskBroker.StreamStasisStartEvents()
             .Subscribe(stasisStartEvent => this.OnStasisStart(stasisStartEvent));
 
+        IDisposable stasisEndSubscription = this.asteriskBroker.StreamStasisEndEvents()
+            .Subscribe(stasisEndEvent => this.OnStasisEnd(stasisEndEvent));
+
         IDisposable stateChangeSubscription = this.asteriskBroker.StreamChannelStateChangeEvents()
             .Subscribe(stateChangeEvent => this.OnChannelStateChange(stateChangeEvent));
 
         stoppingToken.Register(() =>
         {
             stasisSubscription.Dispose();
+            stasisEndSubscription.Dispose();
             stateChangeSubscription.Dispose();
         });
 
@@ -64,6 +79,21 @@ public class RideHailingCallRouter : BackgroundService
                 exception,
                 "Failed to route Stasis-dialed call for channel {ChannelId}",
                 stasisStartEvent.ChannelId);
+        }
+    }
+
+    private async void OnStasisEnd(StasisEndEvent stasisEndEvent)
+    {
+        try
+        {
+            await this.HandleStasisEndAsync(stasisEndEvent);
+        }
+        catch (Exception exception)
+        {
+            this.logger.LogError(
+                exception,
+                "Failed to clean up peer channel after StasisEnd for channel {ChannelId}",
+                stasisEndEvent.ChannelId);
         }
     }
 
@@ -117,6 +147,27 @@ public class RideHailingCallRouter : BackgroundService
         Channel targetChannel = await this.asteriskBroker.InsertChannelAsync($"PJSIP/{targetExtension}");
         this.pendingCallByCalleeChannelId[targetChannel.ChannelId] =
             new PendingCall(bridge.Id, stasisStartEvent.ChannelId);
+
+        this.peerChannelIdByChannelId[stasisStartEvent.ChannelId] = targetChannel.ChannelId;
+        this.peerChannelIdByChannelId[targetChannel.ChannelId] = stasisStartEvent.ChannelId;
+    }
+
+    private async Task HandleStasisEndAsync(StasisEndEvent stasisEndEvent)
+    {
+        if (!this.peerChannelIdByChannelId.TryRemove(stasisEndEvent.ChannelId, out string? peerChannelId))
+        {
+            return;
+        }
+
+        this.peerChannelIdByChannelId.TryRemove(peerChannelId, out _);
+        this.pendingCallByCalleeChannelId.TryRemove(stasisEndEvent.ChannelId, out _);
+        this.pendingCallByCalleeChannelId.TryRemove(peerChannelId, out _);
+
+        // Best-effort: the peer may already be gone (e.g. both legs of a bridge left Stasis around
+        // the same time, or the peer already hung up on its own) — ARI's DELETE 404s in that case,
+        // which is fine, there's nothing left to clean up. Not caught here specifically; it's
+        // caught (and logged) by OnStasisEnd's wrapper, same as every other handler in this class.
+        await this.asteriskBroker.HangupChannelAsync(peerChannelId);
     }
 
     private async Task HandleChannelStateChangeAsync(ChannelStateChangeEvent stateChangeEvent)

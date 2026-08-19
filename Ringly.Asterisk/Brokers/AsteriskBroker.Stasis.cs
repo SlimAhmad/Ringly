@@ -7,12 +7,18 @@ namespace Ringly.Asterisk.Brokers;
 public partial class AsteriskBroker
 {
     private const string StasisStartEventType = "StasisStart";
+    private const string StasisEndEventType = "StasisEnd";
     private const string ChannelStateChangeEventType = "ChannelStateChange";
 
     public IObservable<StasisStartEvent> StreamStasisStartEvents() =>
         this.ariEvents
             .Where(ariEvent => IsEventType(ariEvent, StasisStartEventType))
             .Select(MapToStasisStartEvent);
+
+    public IObservable<StasisEndEvent> StreamStasisEndEvents() =>
+        this.ariEvents
+            .Where(ariEvent => IsEventType(ariEvent, StasisEndEventType))
+            .Select(MapToStasisEndEvent);
 
     public IObservable<ChannelStateChangeEvent> StreamChannelStateChangeEvents() =>
         this.ariEvents
@@ -36,6 +42,12 @@ public partial class AsteriskBroker
             Args = ariEvent.TryGetProperty("args", out JsonElement args)
                 ? args.EnumerateArray().Select(arg => arg.GetString() ?? string.Empty).ToArray()
                 : []
+        };
+
+    private static StasisEndEvent MapToStasisEndEvent(JsonElement ariEvent) =>
+        new()
+        {
+            ChannelId = ariEvent.GetProperty("channel").GetProperty("id").GetString() ?? string.Empty
         };
 
     private static ChannelStateChangeEvent MapToChannelStateChangeEvent(JsonElement ariEvent) =>
