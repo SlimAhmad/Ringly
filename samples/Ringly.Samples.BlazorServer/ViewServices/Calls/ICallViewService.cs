@@ -4,8 +4,8 @@ namespace Ringly.Samples.BlazorServer.ViewServices.Calls;
 
 // The single dependency CallScreen.razor (the Core Component) integrates with — per
 // the-standard-architecture's UI rules, a Core Component "behaves like a service/controller
-// hybrid" through exactly one view service, and never talks to ICallClient/IAudioTonePlayerBroker
-// directly itself. Audio-only for this slice (no video source registered server-side yet).
+// hybrid" through exactly one view service, and never talks to ICallClient/IAudioTonePlayerBroker/
+// IVideoFramePreviewSource directly itself.
 public interface ICallViewService : IDisposable
 {
     // Raised whenever state changes that CallScreen didn't itself just trigger via a user
@@ -29,14 +29,19 @@ public interface ICallViewService : IDisposable
     string? CallFailedMessage { get; }
 
     bool IsMuted { get; }
+    bool IsVideoMuted { get; }
+    bool CurrentCallIncludesVideo { get; }
+    string? RemoteVideoDataUri { get; }
 
     IReadOnlyList<string> EventLog { get; }
 
     ValueTask InitializeAsync();
     ValueTask RegisterAsync();
-    ValueTask PlaceCallAsync();
+    ValueTask PlaceAudioCallAsync();
+    ValueTask PlaceVideoCallAsync();
     ValueTask HangupAsync();
     ValueTask AnswerAsync();
     ValueTask DeclineAsync();
     ValueTask ToggleMuteAsync();
+    ValueTask ToggleVideoMuteAsync();
 }
