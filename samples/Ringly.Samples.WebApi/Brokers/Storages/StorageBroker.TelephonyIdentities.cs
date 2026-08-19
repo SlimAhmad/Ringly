@@ -23,6 +23,13 @@ public partial class StorageBroker
         return telephonyIdentities.FirstOrDefault(identity => identity.UserId == userId);
     }
 
+    public async ValueTask<TelephonyIdentity?> SelectTelephonyIdentityBySipUsernameAsync(string sipUsername)
+    {
+        IQueryable<TelephonyIdentity> telephonyIdentities = await this.SelectAllAsync<TelephonyIdentity>();
+
+        return telephonyIdentities.FirstOrDefault(identity => identity.SipUsername == sipUsername);
+    }
+
     public async ValueTask<TelephonyIdentity> UpdateTelephonyIdentityAsync(TelephonyIdentity telephonyIdentity) =>
         await this.UpdateAsync(telephonyIdentity);
 

@@ -48,6 +48,14 @@ public partial class TelephonyIdentityService : ITelephonyIdentityService
         return await this.storageBroker.SelectTelephonyIdentityByUserIdAsync(userId);
     });
 
+    public ValueTask<TelephonyIdentity?> RetrieveTelephonyIdentityBySipUsernameAsync(string sipUsername) =>
+    TryCatchNullable(async () =>
+    {
+        ValidateSipUsername(sipUsername);
+
+        return await this.storageBroker.SelectTelephonyIdentityBySipUsernameAsync(sipUsername);
+    });
+
     public ValueTask<TelephonyIdentity> ModifyTelephonyIdentityAsync(TelephonyIdentity telephonyIdentity) =>
     TryCatch(async () =>
     {

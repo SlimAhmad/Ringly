@@ -8,6 +8,7 @@ public partial interface IStorageBroker
     ValueTask<IQueryable<TelephonyIdentity>> SelectAllTelephonyIdentitiesAsync();
     ValueTask<TelephonyIdentity> SelectTelephonyIdentityByIdAsync(Guid telephonyIdentityId);
     ValueTask<TelephonyIdentity?> SelectTelephonyIdentityByUserIdAsync(Guid userId);
+    ValueTask<TelephonyIdentity?> SelectTelephonyIdentityBySipUsernameAsync(string sipUsername);
     ValueTask<TelephonyIdentity> UpdateTelephonyIdentityAsync(TelephonyIdentity telephonyIdentity);
     ValueTask<TelephonyIdentity> DeleteTelephonyIdentityAsync(TelephonyIdentity telephonyIdentity);
 }
