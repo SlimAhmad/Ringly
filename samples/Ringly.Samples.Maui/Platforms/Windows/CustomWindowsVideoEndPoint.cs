@@ -59,7 +59,15 @@ public sealed class CustomWindowsVideoEndPoint : IVideoSource, IVideoSink, IFram
     // SIPSorcery.LogFactory.Set() wires up the real ILoggerFactory.
     private static ILogger Logger => SIPSorcery.LogFactory.CreateLogger<CustomWindowsVideoEndPoint>();
 
-    private readonly VP8Codec videoCodec = new();
+    // Separate encoder/decoder instances — NOT one shared VP8Codec. Same fix as the Android
+    // counterpart (AndroidCameraXVideoEndPoint, issue #193/PR #194): a single VP8Codec called from
+    // two different threads at once (EncodeVideo from AnalyzeAsync, on whatever thread Shiny's
+    // CameraView analyzer dispatches to; DecodeVideo from GotVideoFrame, on whatever thread
+    // SIPSorcery dispatches incoming RTP video to) with no synchronization risks the same native
+    // memory-corruption crash confirmed on Android — see #196. Two independent instances removes
+    // the shared state entirely instead of adding locking around one.
+    private readonly VP8Codec videoEncoder = new();
+    private readonly VP8Codec videoDecoder = new();
     private readonly MediaFormatManager<VideoFormat> sourceFormatManager;
     private readonly MediaFormatManager<VideoFormat> sinkFormatManager;
 
@@ -88,8 +96,8 @@ public sealed class CustomWindowsVideoEndPoint : IVideoSource, IVideoSink, IFram
 
     public CustomWindowsVideoEndPoint()
     {
-        this.sourceFormatManager = new MediaFormatManager<VideoFormat>(this.videoCodec.SupportedFormats);
-        this.sinkFormatManager = new MediaFormatManager<VideoFormat>(this.videoCodec.SupportedFormats);
+        this.sourceFormatManager = new MediaFormatManager<VideoFormat>(this.videoEncoder.SupportedFormats);
+        this.sinkFormatManager = new MediaFormatManager<VideoFormat>(this.videoDecoder.SupportedFormats);
     }
 
     // Called by the call page once its CameraView is available (e.g. OnAppearing) — wires this
@@ -136,7 +144,7 @@ public sealed class CustomWindowsVideoEndPoint : IVideoSource, IVideoSink, IFram
 
         try
         {
-            byte[] encodedSample = this.videoCodec.EncodeVideo(
+            byte[] encodedSample = this.videoEncoder.EncodeVideo(
                 windowsFrame.Width,
                 windowsFrame.Height,
                 windowsFrame.Bgra,
@@ -197,7 +205,7 @@ public sealed class CustomWindowsVideoEndPoint : IVideoSource, IVideoSink, IFram
     public void ExternalVideoSourceRawSampleFaster(uint durationMilliseconds, RawImage rawImage) =>
         throw new NotImplementedException();
 
-    public void ForceKeyFrame() => this.videoCodec.ForceKeyFrame();
+    public void ForceKeyFrame() => this.videoEncoder.ForceKeyFrame();
 
     public bool HasEncodedVideoSubscribers() => this.OnVideoSourceEncodedSample is not null;
 
@@ -260,7 +268,7 @@ public sealed class CustomWindowsVideoEndPoint : IVideoSource, IVideoSink, IFram
 
         try
         {
-            foreach (VideoSample sample in this.videoCodec.DecodeVideo(payload, VideoPixelFormatsEnum.Bgr, VideoCodecsEnum.VP8))
+            foreach (VideoSample sample in this.videoDecoder.DecodeVideo(payload, VideoPixelFormatsEnum.Bgr, VideoCodecsEnum.VP8))
             {
                 this.DecodedFrameReady?.Invoke((int)sample.Width, (int)sample.Height, sample.Sample);
                 this.framesDecodedSinceLog++;
@@ -308,6 +316,7 @@ public sealed class CustomWindowsVideoEndPoint : IVideoSource, IVideoSink, IFram
     public void Dispose()
     {
         this.DetachCameraView();
-        this.videoCodec.Dispose();
+        this.videoEncoder.Dispose();
+        this.videoDecoder.Dispose();
     }
 }
