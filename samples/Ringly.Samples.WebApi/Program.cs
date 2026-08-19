@@ -7,6 +7,7 @@ using Ringly.CallCenter.Abstractions;
 using Ringly.CallCenter.Asterisk.Services.Foundations.Queues;
 using Ringly.Samples.WebApi;
 using Ringly.Samples.WebApi.Brokers.Storages;
+using Ringly.Samples.WebApi.Services.Foundations.TelephonyDevices;
 using Ringly.Samples.WebApi.Services.Foundations.TelephonyIdentities;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -36,6 +37,7 @@ builder.Services.AddScoped<IAsteriskSipEndpointConfigFoundationService, Asterisk
 // but per-injection-site would be wasteful/inconsistent within one request).
 builder.Services.AddScoped<IStorageBroker, StorageBroker>();
 builder.Services.AddScoped<ITelephonyIdentityService, TelephonyIdentityService>();
+builder.Services.AddScoped<ITelephonyDeviceService, TelephonyDeviceService>();
 builder.Services.AddScoped<ICallProvisioningService, CallProvisioningService>();
 builder.Services.AddScoped<ICallProvider, AsteriskCallFoundationService>();
 builder.Services.AddScoped<ICallCenterProvider, AsteriskCallCenterFoundationService>();
