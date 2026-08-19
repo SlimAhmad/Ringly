@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="Ringly.Samples.BlazorHybrid/Ringly.Samples.BlazorHybrid.csproj" />
+  <Project Path="Ringly.Samples.BlazorServer/Ringly.Samples.BlazorServer.csproj" />
   <Project Path="Ringly.Samples.Console/Ringly.Samples.Console.csproj" />
   <Project Path="Ringly.Samples.Maui/Ringly.Samples.Maui.csproj" />
   <Project Path="Ringly.Samples.WebApi/Ringly.Samples.WebApi.csproj" />
