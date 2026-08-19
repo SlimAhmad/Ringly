@@ -62,7 +62,17 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
     // ILoggerFactory.
     private static ILogger Logger => SIPSorcery.LogFactory.CreateLogger<AndroidCameraXVideoEndPoint>();
 
-    private readonly VP8Codec videoCodec = new();
+    // Separate encoder/decoder instances — NOT one shared VP8Codec. Confirmed live via repeated
+    // "Fatal signal 11 (SIGSEGV), code 2 (SEGV_ACCERR)" native crashes on ".NET TP Worker" threads
+    // (see issue #193): a single VP8Codec was being called from two different threads at once with
+    // no synchronization — EncodeVideo from CameraX's own single-threaded analysis executor
+    // (OnFrameAnalyzed), DecodeVideo from whatever thread SIPSorcery dispatches incoming RTP video
+    // to (GotVideoFrame, a .NET ThreadPool worker — matching the crash thread name exactly). A
+    // genuinely concurrent call into the same native libvpx state on two threads is memory
+    // corruption, not just a logic bug. Two independent instances removes the shared state
+    // entirely instead of adding locking around one.
+    private readonly VP8Codec videoEncoder = new();
+    private readonly VP8Codec videoDecoder = new();
     private readonly MediaFormatManager<VideoFormat> sourceFormatManager;
     private readonly MediaFormatManager<VideoFormat> sinkFormatManager;
     private readonly CameraLifecycleOwner lifecycleOwner = new();
@@ -95,8 +105,8 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
 
     public AndroidCameraXVideoEndPoint()
     {
-        this.sourceFormatManager = new MediaFormatManager<VideoFormat>(this.videoCodec.SupportedFormats);
-        this.sinkFormatManager = new MediaFormatManager<VideoFormat>(this.videoCodec.SupportedFormats);
+        this.sourceFormatManager = new MediaFormatManager<VideoFormat>(this.videoEncoder.SupportedFormats);
+        this.sinkFormatManager = new MediaFormatManager<VideoFormat>(this.videoDecoder.SupportedFormats);
     }
 
     // No Shiny CameraView involved in this implementation — see the class comment for why these
@@ -145,7 +155,7 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
     public void ExternalVideoSourceRawSampleFaster(uint durationMilliseconds, RawImage rawImage) =>
         throw new NotImplementedException();
 
-    public void ForceKeyFrame() => this.videoCodec.ForceKeyFrame();
+    public void ForceKeyFrame() => this.videoEncoder.ForceKeyFrame();
 
     public bool HasEncodedVideoSubscribers() => this.OnVideoSourceEncodedSample is not null;
 
@@ -327,7 +337,7 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
                 i420Sample = DownsampleI420(i420Sample, width, height, encodeWidth, encodeHeight);
             }
 
-            byte[] encodedSample = this.videoCodec.EncodeVideo(
+            byte[] encodedSample = this.videoEncoder.EncodeVideo(
                 encodeWidth,
                 encodeHeight,
                 i420Sample,
@@ -507,7 +517,7 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
 
         try
         {
-            foreach (VideoSample sample in this.videoCodec.DecodeVideo(payload, VideoPixelFormatsEnum.Bgr, VideoCodecsEnum.VP8))
+            foreach (VideoSample sample in this.videoDecoder.DecodeVideo(payload, VideoPixelFormatsEnum.Bgr, VideoCodecsEnum.VP8))
             {
                 this.DecodedFrameReady?.Invoke((int)sample.Width, (int)sample.Height, sample.Sample);
                 this.framesDecodedSinceLog++;
@@ -556,7 +566,8 @@ public sealed class AndroidCameraXVideoEndPoint : IVideoSource, IVideoSink, IAnd
     {
         this.cameraProvider?.UnbindAll();
         this.lifecycleOwner.Destroy();
-        this.videoCodec.Dispose();
+        this.videoEncoder.Dispose();
+        this.videoDecoder.Dispose();
     }
 }
 
