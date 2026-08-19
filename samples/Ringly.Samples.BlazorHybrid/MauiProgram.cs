@@ -1,26 +1,139 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Microsoft.Maui.Devices;
+using Plugin.Maui.Audio;
+using Ringly.Client.Abstractions;
+using Ringly.Client.SipSorcery;
+using Ringly.Samples.Maui;
 
 namespace Ringly.Samples.BlazorHybrid;
 
 public static class MauiProgram
 {
-	public static MauiApp CreateMauiApp()
-	{
-		var builder = MauiApp.CreateBuilder();
-		builder
-			.UseMauiApp<App>()
-			.ConfigureFonts(fonts =>
-			{
-				fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
-			});
+    public static MauiApp CreateMauiApp()
+    {
+        var builder = MauiApp.CreateBuilder();
+        builder
+            .UseMauiApp<App>()
+            .ConfigureFonts(fonts =>
+            {
+                fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
+            });
 
-		builder.Services.AddMauiBlazorWebView();
+        builder.Services.AddMauiBlazorWebView();
+        builder.AddAudio();
 
 #if DEBUG
-		builder.Services.AddBlazorWebViewDeveloperTools();
-		builder.Logging.AddDebug();
+        builder.Services.AddBlazorWebViewDeveloperTools();
+        builder.Logging.AddDebug();
 #endif
 
-		return builder.Build();
-	}
+#if ANDROID
+        string logDir = Android.App.Application.Context.GetExternalFilesDir(null)?.AbsolutePath ?? FileSystem.AppDataDirectory;
+#else
+        string logDir = FileSystem.AppDataDirectory;
+#endif
+        builder.Logging.AddProvider(new FileLoggerProvider(Path.Combine(logDir, "ringly-debug.log")));
+        builder.Logging.SetMinimumLevel(LogLevel.Trace);
+
+        // Same dev-stack/network configuration as Ringly.Samples.Maui's MauiProgram.cs — see that
+        // file's own extensive comments for why each of these is needed (host resolution differs
+        // by platform/emulator-vs-device, ICE/TURN bind-address quirks, etc.). Kept as a separate
+        // copy (not shared) since each sample app is its own MAUI process with its own DI
+        // container; edit both if your dev stack's address changes.
+        // ringly:lan-ip
+        const string CurrentLanHostAddress = "192.168.1.92";
+
+        string host = DeviceInfo.Platform == DevicePlatform.Android
+            ? (DeviceInfo.Current.DeviceType == DeviceType.Virtual ? "10.0.2.2" : CurrentLanHostAddress)
+            : "localhost";
+
+        builder.Services.Configure<SipSorceryCallOptions>(options =>
+        {
+            options.RegistrarHost = $"{host}:5060";
+            options.RegistrationExpirySeconds = 120;
+
+            string iceServerHost = DeviceInfo.Platform == DevicePlatform.Android ? host : CurrentLanHostAddress;
+            options.IceServerUrls = [$"turn:{iceServerHost}:3478"];
+            options.IceServerUsername = "ringly";
+            options.IceServerCredential = "ringly-dev-turn";
+
+#if WINDOWS
+            options.BindAddress = CurrentLanHostAddress;
+#elif ANDROID
+            string? androidWifiAddress = GetAndroidWifiIPv4Address();
+
+            if (androidWifiAddress is not null)
+            {
+                options.BindAddress = androidWifiAddress;
+            }
+#endif
+        });
+
+#if WINDOWS
+        // Real microphone/speaker access via the MAUI sample's CustomWindowsAudioEndPoint (linked
+        // into this project — see the csproj's own comment). Video counterpart lands in a
+        // follow-up slice.
+        var audioEncoder = new SIPSorcery.Media.AudioEncoder();
+        var windowsAudioEndPoint = new Ringly.Samples.Maui.Platforms.Windows.CustomWindowsAudioEndPoint(audioEncoder);
+        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSource>(windowsAudioEndPoint);
+        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSink>(windowsAudioEndPoint);
+#elif ANDROID
+        var androidAudioEncoder = new SIPSorcery.Media.AudioEncoder();
+        var androidAudioEndPoint = new Ringly.Samples.Maui.Platforms.Android.AndroidAudioEndPoint(androidAudioEncoder);
+        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSource>(androidAudioEndPoint);
+        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSink>(androidAudioEndPoint);
+#endif
+
+        builder.Services.AddSingleton<ICallClient, SipSorceryCallClient>();
+
+        MauiApp app = builder.Build();
+
+        SIPSorcery.LogFactory.Set(app.Services.GetRequiredService<ILoggerFactory>());
+
+        // SipSorceryCallClient reads IOptions<SipSorceryCallOptions> in its constructor;
+        // resolving it eagerly here means any registration failure surfaces at startup, not
+        // mid-call.
+        _ = app.Services.GetRequiredService<IOptions<SipSorceryCallOptions>>();
+
+        return app;
+    }
+
+#if ANDROID
+    // See Ringly.Samples.Maui's MauiProgram.cs for the full explanation of why this reads the
+    // device's Wi-Fi IPv4 address this way (deprecated-but-functional API, broad catch for a
+    // startup-time best-effort read with a safe null fallback).
+    private static string? GetAndroidWifiIPv4Address()
+    {
+        int rawAddress;
+
+        try
+        {
+            using var wifiManager = global::Android.App.Application.Context
+                .GetSystemService(global::Android.Content.Context.WifiService) as global::Android.Net.Wifi.WifiManager;
+
+            rawAddress = wifiManager?.ConnectionInfo?.IpAddress ?? 0;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+
+        if (rawAddress == 0)
+        {
+            return null;
+        }
+
+        var addressBytes = new byte[]
+        {
+            (byte)(rawAddress & 0xFF),
+            (byte)((rawAddress >> 8) & 0xFF),
+            (byte)((rawAddress >> 16) & 0xFF),
+            (byte)((rawAddress >> 24) & 0xFF)
+        };
+
+        return new System.Net.IPAddress(addressBytes).ToString();
+    }
+#endif
 }

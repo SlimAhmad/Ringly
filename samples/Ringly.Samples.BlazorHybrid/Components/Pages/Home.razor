@@ -1,5 +1,396 @@
-﻿@page "/"
+@page "/"
+@using Plugin.Maui.Audio
+@using Ringly.Client.Abstractions
+@using Ringly.Client.Abstractions.Models
+@using Ringly.Samples.Maui
+@inject ICallClient CallClient
+@inject IAudioManager AudioManager
+@implements IDisposable
 
-<h1>Hello, world!</h1>
+<div class="mx-auto flex min-h-screen max-w-md flex-col gap-6 p-6">
+    <h1 class="text-xl font-semibold text-slate-100">Ringly — Blazor Hybrid</h1>
 
-Welcome to your new app.
+    @if (state == CallScreenState.Setup)
+    {
+        <section class="flex flex-col gap-3 rounded-xl bg-slate-900 p-4">
+            <h2 class="text-sm font-medium text-slate-400">Register</h2>
+            <input class="rounded-lg bg-slate-800 px-3 py-2 text-slate-100 placeholder-slate-500"
+                   placeholder="Extension (e.g. 1000)" @bind="extension" @bind:event="oninput" />
+            <input class="rounded-lg bg-slate-800 px-3 py-2 text-slate-100 placeholder-slate-500"
+                   placeholder="Password" type="password" @bind="password" @bind:event="oninput" />
+            <button class="rounded-lg bg-indigo-600 px-3 py-2 font-medium text-white hover:bg-indigo-500"
+                    @onclick="OnRegisterClickedAsync">
+                Register
+            </button>
+            <p class="text-sm @registrationStatusColorClass">@registrationStatus</p>
+        </section>
+
+        <section class="flex flex-col gap-3 rounded-xl bg-slate-900 p-4">
+            <h2 class="text-sm font-medium text-slate-400">Place a call</h2>
+            <input class="rounded-lg bg-slate-800 px-3 py-2 text-slate-100 placeholder-slate-500"
+                   placeholder="Target extension" @bind="targetExtension" @bind:event="oninput" />
+            <button class="rounded-lg bg-emerald-600 px-3 py-2 font-medium text-white hover:bg-emerald-500"
+                    @onclick="OnAudioCallClickedAsync">
+                📞 Audio call
+            </button>
+        </section>
+
+        @if (callFailedMessage is not null)
+        {
+            <p class="rounded-lg bg-red-950 px-3 py-2 text-sm text-red-300">@callFailedMessage</p>
+        }
+    }
+    else
+    {
+        <section class="flex flex-col items-center gap-4 rounded-xl bg-slate-900 p-6">
+            <div class="flex h-20 w-20 items-center justify-center rounded-full bg-indigo-600 text-2xl font-semibold text-white">
+                @AvatarInitials(callTargetExtension)
+            </div>
+            <p class="text-sm text-slate-400">@callStateLabel</p>
+            <p class="text-lg font-medium text-slate-100">@callTargetExtension</p>
+
+            @if (state == CallScreenState.Active)
+            {
+                <p class="font-mono text-slate-300">@callElapsedText</p>
+            }
+
+            <div class="flex gap-4">
+                @if (state == CallScreenState.Dialing)
+                {
+                    <button class="rounded-full bg-red-600 px-6 py-3 font-medium text-white hover:bg-red-500" @onclick="OnHangupClickedAsync">
+                        ✕ Cancel
+                    </button>
+                }
+                else if (state == CallScreenState.Incoming)
+                {
+                    <button class="rounded-full bg-emerald-600 px-6 py-3 font-medium text-white hover:bg-emerald-500" @onclick="OnAnswerClickedAsync">
+                        ✓ Answer
+                    </button>
+                    <button class="rounded-full bg-red-600 px-6 py-3 font-medium text-white hover:bg-red-500" @onclick="OnDeclineClickedAsync">
+                        ✕ Decline
+                    </button>
+                }
+                else if (state == CallScreenState.Active)
+                {
+                    <button class="rounded-full px-6 py-3 font-medium text-white @(isMuted ? "bg-indigo-600" : "bg-slate-700 hover:bg-slate-600")"
+                            @onclick="OnMuteClickedAsync">
+                        @(isMuted ? "🔇" : "🎙")
+                    </button>
+                    <button class="rounded-full bg-red-600 px-6 py-3 font-medium text-white hover:bg-red-500" @onclick="OnHangupClickedAsync">
+                        ✕ Hang up
+                    </button>
+                }
+            </div>
+        </section>
+    }
+
+    <section class="flex flex-1 flex-col gap-1 overflow-y-auto rounded-xl bg-slate-900 p-4 text-xs text-slate-400">
+        <h2 class="mb-1 text-sm font-medium text-slate-400">Event log</h2>
+        @foreach (string entry in eventLog)
+        {
+            <p>@entry</p>
+        }
+    </section>
+</div>
+
+@code {
+    private enum CallScreenState { Setup, Dialing, Incoming, Active }
+
+    // Same 100ms-per-frame throttle rationale as Ringly.Samples.Maui's CallPage.xaml.cs — not
+    // relevant yet (no video wired up in this slice) but kept as a marker for the follow-up slice
+    // that ports video, so the same MinImageUpdateInterval constant lands in the same place.
+
+    private CallScreenState state = CallScreenState.Setup;
+    private string extension = string.Empty;
+    private string password = string.Empty;
+    private string targetExtension = string.Empty;
+    private string registrationStatus = string.Empty;
+    private string registrationStatusColorClass = string.Empty;
+    private string callStateLabel = string.Empty;
+    private string callTargetExtension = string.Empty;
+    private string callElapsedText = "00:00";
+    private string? callFailedMessage;
+    private bool isMuted;
+
+    private readonly List<string> eventLog = [];
+    private IDisposable? eventSubscription;
+    private System.Threading.Timer? callTimer;
+    private IAudioPlayer? tonePlayer;
+    private CallHandle? currentCallHandle;
+    private CallHandle? incomingCallHandle;
+    private DateTimeOffset callAnsweredAt;
+
+    protected override void OnInitialized()
+    {
+        this.eventSubscription = this.CallClient.StreamEvents().Subscribe(callEvent =>
+            this.InvokeAsync(() => this.HandleCallEvent(callEvent)));
+    }
+
+    private void HandleCallEvent(CallClientEvent callEvent)
+    {
+        this.LogEvent($"{callEvent.EventType}");
+
+        switch (callEvent.EventType)
+        {
+            case "IncomingCall":
+                this.incomingCallHandle = callEvent.Handle;
+                this.ShowIncoming(callEvent.RemoteExtension);
+                break;
+
+            case "CallAnswered":
+                this.ShowActive();
+                break;
+
+            case "CallHungup":
+                this.currentCallHandle = null;
+                this.incomingCallHandle = null;
+                this.ShowSetup();
+                break;
+
+            case "CallFailed":
+                this.currentCallHandle = null;
+                this.incomingCallHandle = null;
+                this.ShowCallFailed();
+                break;
+        }
+
+        this.StateHasChanged();
+    }
+
+    private async Task OnRegisterClickedAsync()
+    {
+        this.registrationStatus = "Registering...";
+        this.registrationStatusColorClass = "text-amber-400";
+        this.StateHasChanged();
+
+        try
+        {
+            await this.CallClient.RegisterAsync(new SipCredentials
+            {
+                ClientId = Guid.NewGuid(),
+                Extension = this.extension,
+                Password = this.password
+            });
+
+            this.registrationStatus = $"Registered as {this.extension}";
+            this.registrationStatusColorClass = "text-emerald-400";
+        }
+        catch (Exception exception)
+        {
+            this.registrationStatus = $"Registration failed: {exception.Message}";
+            this.registrationStatusColorClass = "text-red-400";
+        }
+
+        this.StateHasChanged();
+    }
+
+    private Task OnAudioCallClickedAsync() => this.PlaceCallAsync();
+
+    private async Task PlaceCallAsync()
+    {
+        if (string.IsNullOrWhiteSpace(this.targetExtension))
+        {
+            return;
+        }
+
+        this.ShowDialing(this.targetExtension);
+
+        try
+        {
+            this.currentCallHandle = await this.CallClient.PlaceCallAsync(this.targetExtension, includeVideo: false);
+        }
+        catch (Exception exception)
+        {
+            this.LogEvent($"Call failed: {exception.Message}");
+            this.ShowCallFailed();
+        }
+
+        this.StateHasChanged();
+    }
+
+    private async Task OnHangupClickedAsync()
+    {
+        CallHandle? handle = this.currentCallHandle ?? this.incomingCallHandle;
+
+        if (handle is not null)
+        {
+            try
+            {
+                await this.CallClient.HangupAsync(handle);
+            }
+            catch (Exception exception)
+            {
+                this.LogEvent($"Hangup failed: {exception.Message}");
+            }
+        }
+
+        this.currentCallHandle = null;
+        this.incomingCallHandle = null;
+        this.ShowSetup();
+        this.StateHasChanged();
+    }
+
+    private async Task OnAnswerClickedAsync()
+    {
+        if (this.incomingCallHandle is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await this.CallClient.AnswerCallAsync(this.incomingCallHandle);
+            this.currentCallHandle = this.incomingCallHandle;
+            this.ShowActive();
+        }
+        catch (Exception exception)
+        {
+            this.LogEvent($"Answer failed: {exception.Message}");
+            this.ShowCallFailed();
+        }
+
+        this.StateHasChanged();
+    }
+
+    private async Task OnDeclineClickedAsync()
+    {
+        if (this.incomingCallHandle is not null)
+        {
+            try
+            {
+                await this.CallClient.HangupAsync(this.incomingCallHandle);
+            }
+            catch (Exception exception)
+            {
+                this.LogEvent($"Decline failed: {exception.Message}");
+            }
+
+            this.incomingCallHandle = null;
+        }
+
+        this.ShowSetup();
+        this.StateHasChanged();
+    }
+
+    private async Task OnMuteClickedAsync()
+    {
+        try
+        {
+            if (this.isMuted)
+            {
+                await this.CallClient.UnmuteAsync();
+            }
+            else
+            {
+                await this.CallClient.MuteAsync();
+            }
+
+            this.isMuted = !this.isMuted;
+        }
+        catch (Exception exception)
+        {
+            this.LogEvent($"Mute failed: {exception.Message}");
+        }
+
+        this.StateHasChanged();
+    }
+
+    private void ShowSetup()
+    {
+        this.StopCallTimer();
+        this.StopTone();
+        this.state = CallScreenState.Setup;
+        this.isMuted = false;
+        this.callFailedMessage = null;
+    }
+
+    private void ShowDialing(string extensionValue)
+    {
+        this.state = CallScreenState.Dialing;
+        this.callFailedMessage = null;
+        this.callStateLabel = "Calling";
+        this.callTargetExtension = extensionValue;
+        this.PlayTone(ToneGenerator.CreateRingbackTone());
+    }
+
+    private void ShowIncoming(string callerExtension)
+    {
+        this.state = CallScreenState.Incoming;
+        this.callFailedMessage = null;
+        this.callStateLabel = "Incoming call";
+        this.callTargetExtension = string.IsNullOrEmpty(callerExtension) ? "Unknown" : callerExtension;
+        this.PlayTone(ToneGenerator.CreateRingTone());
+    }
+
+    private void ShowActive()
+    {
+        this.StopTone();
+        this.state = CallScreenState.Active;
+        this.callFailedMessage = null;
+        this.callStateLabel = "In call with";
+        this.StartCallTimer();
+    }
+
+    private void ShowCallFailed()
+    {
+        this.StopCallTimer();
+        this.StopTone();
+        this.state = CallScreenState.Setup;
+        this.callFailedMessage = "Call ended unexpectedly — see event log below.";
+    }
+
+    private void PlayTone(Stream toneWav)
+    {
+        this.StopTone();
+
+        try
+        {
+            this.tonePlayer = this.AudioManager.CreatePlayer(toneWav);
+            this.tonePlayer.Loop = true;
+            this.tonePlayer.Play();
+        }
+        catch (Exception exception)
+        {
+            this.LogEvent($"Tone playback failed: {exception.Message}");
+        }
+    }
+
+    private void StopTone()
+    {
+        this.tonePlayer?.Stop();
+        this.tonePlayer?.Dispose();
+        this.tonePlayer = null;
+    }
+
+    private void StartCallTimer()
+    {
+        this.callAnsweredAt = DateTimeOffset.Now;
+        this.callElapsedText = "00:00";
+
+        this.callTimer = new System.Threading.Timer(_ =>
+        {
+            TimeSpan elapsed = DateTimeOffset.Now - this.callAnsweredAt;
+            this.callElapsedText = elapsed.ToString(elapsed.TotalHours >= 1 ? @"hh\:mm\:ss" : @"mm\:ss");
+            this.InvokeAsync(this.StateHasChanged);
+        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    private void StopCallTimer()
+    {
+        this.callTimer?.Dispose();
+        this.callTimer = null;
+    }
+
+    private void LogEvent(string message) =>
+        this.eventLog.Insert(0, $"{DateTimeOffset.Now:HH:mm:ss} {message}");
+
+    private static string AvatarInitials(string extensionValue) =>
+        string.IsNullOrEmpty(extensionValue) ? "?" : extensionValue[..Math.Min(2, extensionValue.Length)];
+
+    public void Dispose()
+    {
+        this.eventSubscription?.Dispose();
+        this.StopCallTimer();
+        this.StopTone();
+    }
+}

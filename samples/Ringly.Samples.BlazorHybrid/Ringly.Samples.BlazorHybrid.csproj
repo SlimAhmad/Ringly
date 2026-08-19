@@ -66,11 +66,39 @@
         <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.90" />
         <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="$(MauiVersion)" />
         <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
+        <!-- Cross-platform (Android + Windows) audio playback for the dial/ring tones — same
+             package/purpose as Ringly.Samples.Maui's csproj. -->
+        <PackageReference Include="Plugin.Maui.Audio" Version="4.0.0" />
+    </ItemGroup>
+
+    <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
+        <!-- Real microphone/speaker access for the Windows target — see NAudio's own comment on
+             Ringly.Samples.Maui's csproj for why this hand-rolls WASAPI capture directly. -->
+        <PackageReference Include="NAudio" Version="2.3.0" />
     </ItemGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\..\Ringly.Client.Abstractions\Ringly.Client.Abstractions.csproj" />
         <ProjectReference Include="..\..\Ringly.Client.SipSorcery\Ringly.Client.SipSorcery.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- Reuses Ringly.Samples.Maui's platform audio endpoints directly (same hand-rolled
+             WASAPI/AudioRecord+AudioTrack capture/render code, same Ringly.Samples.Maui.Platforms.*
+             namespace) rather than duplicating them — per the plan, this sample shares the same
+             platform endpoints as the MAUI sample, only the UI layer (Razor vs. XAML) differs.
+             Video endpoint reuse (CustomWindowsVideoEndPoint/AndroidVideoEndPoint/
+             AndroidCameraXVideoEndPoint) lands in a follow-up slice alongside the video call UI. -->
+        <Compile Include="..\Ringly.Samples.Maui\FileLogger.cs" Link="FileLogger.cs" />
+        <Compile Include="..\Ringly.Samples.Maui\ToneGenerator.cs" Link="ToneGenerator.cs" />
+    </ItemGroup>
+
+    <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
+        <Compile Include="..\Ringly.Samples.Maui\Platforms\Windows\CustomWindowsAudioEndPoint.cs" Link="Platforms\Windows\CustomWindowsAudioEndPoint.cs" />
+    </ItemGroup>
+
+    <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+        <Compile Include="..\Ringly.Samples.Maui\Platforms\Android\AndroidAudioEndPoint.cs" Link="Platforms\Android\AndroidAudioEndPoint.cs" />
     </ItemGroup>
 
 </Project>
