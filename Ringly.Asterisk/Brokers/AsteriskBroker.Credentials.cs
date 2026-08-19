@@ -52,8 +52,11 @@ public partial class AsteriskBroker
         // Npgsql.
         await using var command = new NpgsqlCommand(
             """
-            INSERT INTO ps_endpoints (id, context, disallow, allow, auth, aors, webrtc, rewrite_contact, set_var)
-            VALUES (@id, @context, @disallow, @allow, @auth, @aors, @webrtc::ast_bool_values, @rewrite_contact::ast_bool_values, @set_var)
+            INSERT INTO ps_endpoints
+                (id, context, disallow, allow, auth, aors, webrtc, rewrite_contact, set_var, rtp_timeout, rtp_timeout_hold)
+            VALUES
+                (@id, @context, @disallow, @allow, @auth, @aors, @webrtc::ast_bool_values, @rewrite_contact::ast_bool_values,
+                 @set_var, @rtp_timeout, @rtp_timeout_hold)
             ON CONFLICT (id) DO UPDATE SET
                 context = EXCLUDED.context,
                 disallow = EXCLUDED.disallow,
@@ -62,7 +65,9 @@ public partial class AsteriskBroker
                 aors = EXCLUDED.aors,
                 webrtc = EXCLUDED.webrtc,
                 rewrite_contact = EXCLUDED.rewrite_contact,
-                set_var = EXCLUDED.set_var
+                set_var = EXCLUDED.set_var,
+                rtp_timeout = EXCLUDED.rtp_timeout,
+                rtp_timeout_hold = EXCLUDED.rtp_timeout_hold
             """,
             connection);
 
@@ -84,6 +89,18 @@ public partial class AsteriskBroker
         command.Parameters.AddWithValue("webrtc", this.asteriskOptions.UseWebRtcTransport ? "yes" : "no");
         command.Parameters.AddWithValue("rewrite_contact", "yes");
         command.Parameters.AddWithValue("set_var", TransferHandlingSetVar);
+
+        // Backstop for a genuinely crashed/force-killed client — one that sends no BYE, no CANCEL,
+        // nothing at all, so RideHailingCallRouter's StasisEnd-driven peer cleanup (see that class)
+        // never fires because Asterisk itself never learns the channel ended. Without this, such a
+        // channel (and, once bridged, its peer) sits open indefinitely — confirmed live: 14 leaked
+        // channels accumulated over one session, some over an hour old, until an endpoint accrued
+        // enough of them that Asterisk started instantly declining every new call to it. 30/60s
+        // mirror common Asterisk defaults for "no RTP for this long on an active/held call" — long
+        // enough not to false-positive during real bursty WebRTC traffic, short enough that a real
+        // crash gets reaped well before it can affect the next call.
+        command.Parameters.AddWithValue("rtp_timeout", 30);
+        command.Parameters.AddWithValue("rtp_timeout_hold", 60);
 
         await command.ExecuteNonQueryAsync();
     }
