@@ -5,6 +5,7 @@
 @using Ringly.Samples.Maui
 @inject ICallClient CallClient
 @inject IAudioManager AudioManager
+@inject IVideoFramePreviewSource VideoPreviewSource
 @implements IDisposable
 
 <div class="mx-auto flex min-h-screen max-w-md flex-col gap-6 p-6">
@@ -29,10 +30,16 @@
             <h2 class="text-sm font-medium text-slate-400">Place a call</h2>
             <input class="rounded-lg bg-slate-800 px-3 py-2 text-slate-100 placeholder-slate-500"
                    placeholder="Target extension" @bind="targetExtension" @bind:event="oninput" />
-            <button class="rounded-lg bg-emerald-600 px-3 py-2 font-medium text-white hover:bg-emerald-500"
-                    @onclick="OnAudioCallClickedAsync">
-                📞 Audio call
-            </button>
+            <div class="flex gap-3">
+                <button class="flex-1 rounded-lg bg-emerald-600 px-3 py-2 font-medium text-white hover:bg-emerald-500"
+                        @onclick="OnAudioCallClickedAsync">
+                    📞 Audio call
+                </button>
+                <button class="flex-1 rounded-lg bg-emerald-700 px-3 py-2 font-medium text-white hover:bg-emerald-600"
+                        @onclick="OnVideoCallClickedAsync">
+                    📹 Video call
+                </button>
+            </div>
         </section>
 
         @if (callFailedMessage is not null)
@@ -43,9 +50,25 @@
     else
     {
         <section class="flex flex-col items-center gap-4 rounded-xl bg-slate-900 p-6">
-            <div class="flex h-20 w-20 items-center justify-center rounded-full bg-indigo-600 text-2xl font-semibold text-white">
-                @AvatarInitials(callTargetExtension)
-            </div>
+            @if (state == CallScreenState.Active && currentCallIncludesVideo && remoteVideoDataUri is not null)
+            {
+                <img src="@remoteVideoDataUri" class="w-full rounded-lg bg-black" alt="Remote video" />
+            }
+            else
+            {
+                <div class="flex h-20 w-20 items-center justify-center rounded-full bg-indigo-600 text-2xl font-semibold text-white">
+                    @AvatarInitials(callTargetExtension)
+                </div>
+            }
+
+            @if (state == CallScreenState.Active && currentCallIncludesVideo && !isVideoMuted && localVideoDataUri is not null)
+            {
+                <!-- Only ever populated on Android — Windows renders its local preview through
+                     MainPage.xaml's native CameraView overlay instead (see
+                     VideoFramePreviewSource.cs's own comment). -->
+                <img src="@localVideoDataUri" class="h-24 w-32 self-end rounded-lg bg-black" alt="Local preview" />
+            }
+
             <p class="text-sm text-slate-400">@callStateLabel</p>
             <p class="text-lg font-medium text-slate-100">@callTargetExtension</p>
 
@@ -54,7 +77,7 @@
                 <p class="font-mono text-slate-300">@callElapsedText</p>
             }
 
-            <div class="flex gap-4">
+            <div class="flex flex-wrap justify-center gap-4">
                 @if (state == CallScreenState.Dialing)
                 {
                     <button class="rounded-full bg-red-600 px-6 py-3 font-medium text-white hover:bg-red-500" @onclick="OnHangupClickedAsync">
@@ -76,6 +99,18 @@
                             @onclick="OnMuteClickedAsync">
                         @(isMuted ? "🔇" : "🎙")
                     </button>
+
+                    @if (currentCallIncludesVideo)
+                    {
+                        <button class="rounded-full px-6 py-3 font-medium text-white @(isVideoMuted ? "bg-slate-700 hover:bg-slate-600" : "bg-indigo-600")"
+                                @onclick="OnVideoToggleClickedAsync">
+                            @(isVideoMuted ? "🚫" : "📷")
+                        </button>
+                        <button class="rounded-full bg-slate-700 px-6 py-3 font-medium text-white hover:bg-slate-600" @onclick="OnSwitchCameraClickedAsync">
+                            🔄
+                        </button>
+                    }
+
                     <button class="rounded-full bg-red-600 px-6 py-3 font-medium text-white hover:bg-red-500" @onclick="OnHangupClickedAsync">
                         ✕ Hang up
                     </button>
@@ -96,9 +131,13 @@
 @code {
     private enum CallScreenState { Setup, Dialing, Incoming, Active }
 
-    // Same 100ms-per-frame throttle rationale as Ringly.Samples.Maui's CallPage.xaml.cs — not
-    // relevant yet (no video wired up in this slice) but kept as a marker for the follow-up slice
-    // that ports video, so the same MinImageUpdateInterval constant lands in the same place.
+    // Same 100ms-per-frame (10fps) throttle rationale as Ringly.Samples.Maui's CallPage.xaml.cs —
+    // reassigning an <img> src faster than the browser/WebView can decode the previous one queues
+    // up redundant work for no visible benefit; this is a generous cap relative to the video
+    // pipeline's own throttles (15fps encode on both platforms).
+    private static readonly TimeSpan MinImageUpdateInterval = TimeSpan.FromMilliseconds(100);
+    private DateTime lastRemoteImageUpdateAt = DateTime.MinValue;
+    private DateTime lastLocalImageUpdateAt = DateTime.MinValue;
 
     private CallScreenState state = CallScreenState.Setup;
     private string extension = string.Empty;
@@ -110,7 +149,15 @@
     private string callTargetExtension = string.Empty;
     private string callElapsedText = "00:00";
     private string? callFailedMessage;
+    private string? remoteVideoDataUri;
+    private string? localVideoDataUri;
     private bool isMuted;
+    private bool isVideoMuted;
+
+    // Whether the CURRENT call actually offered video — an audio call never starts the camera
+    // session at all (no video "m=" line to negotiate a format against). Mirrors
+    // CallPage.xaml.cs's currentCallIncludesVideo field/comment.
+    private bool currentCallIncludesVideo;
 
     private readonly List<string> eventLog = [];
     private IDisposable? eventSubscription;
@@ -120,10 +167,94 @@
     private CallHandle? incomingCallHandle;
     private DateTimeOffset callAnsweredAt;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         this.eventSubscription = this.CallClient.StreamEvents().Subscribe(callEvent =>
             this.InvokeAsync(() => this.HandleCallEvent(callEvent)));
+
+        this.VideoPreviewSource.DecodedFrameReady += this.OnDecodedFrameReady;
+        this.VideoPreviewSource.LocalFrameReady += this.OnLocalFrameReady;
+
+#if ANDROID
+        // AndroidAudioEndPoint's AudioRecord and the camera capture pipeline both silently fail to
+        // initialize without these — Android 6+ requires an explicit runtime grant even though
+        // both are declared in AndroidManifest.xml. Requested once up front so a denial surfaces
+        // immediately instead of as a confusing silent "no audio"/"no video" later, mirroring
+        // CallPage.xaml.cs's own OnAppearing.
+        PermissionStatus microphoneStatus = await Permissions.RequestAsync<Permissions.Microphone>();
+
+        if (microphoneStatus != PermissionStatus.Granted)
+        {
+            this.LogEvent("Microphone permission denied — calls will have no audio.");
+        }
+
+        PermissionStatus cameraStatus = await Permissions.RequestAsync<Permissions.Camera>();
+
+        if (cameraStatus != PermissionStatus.Granted)
+        {
+            this.LogEvent("Camera permission denied — calls will have no outgoing video.");
+        }
+#else
+        await Task.CompletedTask;
+#endif
+    }
+
+    // Runs off the capture/decode thread — marshal to the UI thread before touching component
+    // state, same as HandleCallEvent's InvokeAsync above.
+    private void OnDecodedFrameReady(int width, int height, byte[] bgrSample)
+    {
+        if (DateTime.UtcNow - this.lastRemoteImageUpdateAt < MinImageUpdateInterval)
+        {
+            return;
+        }
+
+        this.lastRemoteImageUpdateAt = DateTime.UtcNow;
+        this.remoteVideoDataUri = BuildBitmapDataUri(width, height, bgrSample);
+        this.InvokeAsync(this.StateHasChanged);
+    }
+
+    private void OnLocalFrameReady(int width, int height, byte[] bgrSample)
+    {
+        if (DateTime.UtcNow - this.lastLocalImageUpdateAt < MinImageUpdateInterval)
+        {
+            return;
+        }
+
+        this.lastLocalImageUpdateAt = DateTime.UtcNow;
+        this.localVideoDataUri = BuildBitmapDataUri(width, height, bgrSample);
+        this.InvokeAsync(this.StateHasChanged);
+    }
+
+    // Wraps a raw BGR24 buffer (VP8Codec.DecodeVideo's output format) in a minimal 24bpp BMP
+    // container, base64-encoded as a data: URI an <img> can render directly — the Blazor
+    // equivalent of CallPage.xaml.cs's BuildBitmap, which does the same thing for a MAUI
+    // ImageSource. Stores rows bottom-up (BMP's canonical, universally-supported layout).
+    private static string BuildBitmapDataUri(int width, int height, byte[] bgr)
+    {
+        int rowSize = ((width * 3) + 3) / 4 * 4;
+        int pixelDataSize = rowSize * height;
+        int fileSize = 54 + pixelDataSize;
+
+        var bitmap = new byte[fileSize];
+        bitmap[0] = (byte)'B';
+        bitmap[1] = (byte)'M';
+        BitConverter.GetBytes(fileSize).CopyTo(bitmap, 2);
+        BitConverter.GetBytes(54).CopyTo(bitmap, 10);
+        BitConverter.GetBytes(40).CopyTo(bitmap, 14);
+        BitConverter.GetBytes(width).CopyTo(bitmap, 18);
+        BitConverter.GetBytes(height).CopyTo(bitmap, 22);
+        BitConverter.GetBytes((short)1).CopyTo(bitmap, 26);
+        BitConverter.GetBytes((short)24).CopyTo(bitmap, 28);
+        BitConverter.GetBytes(pixelDataSize).CopyTo(bitmap, 34);
+
+        for (int row = 0; row < height; row++)
+        {
+            int sourceRowStart = row * width * 3;
+            int destinationRowStart = 54 + ((height - 1 - row) * rowSize);
+            Array.Copy(bgr, sourceRowStart, bitmap, destinationRowStart, width * 3);
+        }
+
+        return $"data:image/bmp;base64,{Convert.ToBase64String(bitmap)}";
     }
 
     private void HandleCallEvent(CallClientEvent callEvent)
@@ -184,20 +315,23 @@
         this.StateHasChanged();
     }
 
-    private Task OnAudioCallClickedAsync() => this.PlaceCallAsync();
+    private Task OnAudioCallClickedAsync() => this.PlaceCallAsync(includeVideo: false);
 
-    private async Task PlaceCallAsync()
+    private Task OnVideoCallClickedAsync() => this.PlaceCallAsync(includeVideo: true);
+
+    private async Task PlaceCallAsync(bool includeVideo)
     {
         if (string.IsNullOrWhiteSpace(this.targetExtension))
         {
             return;
         }
 
+        this.currentCallIncludesVideo = includeVideo;
         this.ShowDialing(this.targetExtension);
 
         try
         {
-            this.currentCallHandle = await this.CallClient.PlaceCallAsync(this.targetExtension, includeVideo: false);
+            this.currentCallHandle = await this.CallClient.PlaceCallAsync(this.targetExtension, includeVideo);
         }
         catch (Exception exception)
         {
@@ -295,13 +429,52 @@
         this.StateHasChanged();
     }
 
+    private async Task OnVideoToggleClickedAsync()
+    {
+        try
+        {
+            if (this.isVideoMuted)
+            {
+                await this.CallClient.UnmuteVideoAsync();
+            }
+            else
+            {
+                await this.CallClient.MuteVideoAsync();
+            }
+
+            this.isVideoMuted = !this.isVideoMuted;
+        }
+        catch (Exception exception)
+        {
+            this.LogEvent($"Video toggle failed: {exception.Message}");
+        }
+
+        this.StateHasChanged();
+    }
+
+    private async Task OnSwitchCameraClickedAsync()
+    {
+        try
+        {
+            await this.VideoPreviewSource.SwitchCameraAsync();
+        }
+        catch (Exception exception)
+        {
+            this.LogEvent($"Camera switch failed: {exception.Message}");
+        }
+    }
+
     private void ShowSetup()
     {
         this.StopCallTimer();
         this.StopTone();
         this.state = CallScreenState.Setup;
         this.isMuted = false;
+        this.isVideoMuted = false;
+        this.currentCallIncludesVideo = false;
         this.callFailedMessage = null;
+        this.remoteVideoDataUri = null;
+        this.localVideoDataUri = null;
     }
 
     private void ShowDialing(string extensionValue)
@@ -390,6 +563,8 @@
     public void Dispose()
     {
         this.eventSubscription?.Dispose();
+        this.VideoPreviewSource.DecodedFrameReady -= this.OnDecodedFrameReady;
+        this.VideoPreviewSource.LocalFrameReady -= this.OnLocalFrameReady;
         this.StopCallTimer();
         this.StopTone();
     }

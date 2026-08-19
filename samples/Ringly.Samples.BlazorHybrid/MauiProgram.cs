@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Maui.Devices;
 using Plugin.Maui.Audio;
+using Shiny;
 using Ringly.Client.Abstractions;
 using Ringly.Client.SipSorcery;
 using Ringly.Samples.Maui;
@@ -22,7 +23,9 @@ public static class MauiProgram
             });
 
         builder.Services.AddMauiBlazorWebView();
+        builder.Services.AddTransient<MainPage>();
         builder.AddAudio();
+        builder.UseShinyCamera();
 
 #if DEBUG
         builder.Services.AddBlazorWebViewDeveloperTools();
@@ -73,17 +76,36 @@ public static class MauiProgram
 
 #if WINDOWS
         // Real microphone/speaker access via the MAUI sample's CustomWindowsAudioEndPoint (linked
-        // into this project — see the csproj's own comment). Video counterpart lands in a
-        // follow-up slice.
+        // into this project — see the csproj's own comment).
         var audioEncoder = new SIPSorcery.Media.AudioEncoder();
         var windowsAudioEndPoint = new Ringly.Samples.Maui.Platforms.Windows.CustomWindowsAudioEndPoint(audioEncoder);
         builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSource>(windowsAudioEndPoint);
         builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSink>(windowsAudioEndPoint);
+
+        // Video counterpart — needs a native CameraView attached (see MainPage.xaml/.xaml.cs),
+        // which is why this is registered as its own concrete singleton (not just under the
+        // IVideoSource/IVideoSink abstractions) — MainPage resolves it directly via DI to call
+        // AttachCameraView, the same way Ringly.Samples.Maui's CallPage does.
+        var windowsVideoEndPoint = new Ringly.Samples.Maui.Platforms.Windows.CustomWindowsVideoEndPoint();
+        builder.Services.AddSingleton(windowsVideoEndPoint);
+        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IVideoSource>(windowsVideoEndPoint);
+        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IVideoSink>(windowsVideoEndPoint);
+        builder.Services.AddSingleton<IVideoFramePreviewSource, WindowsVideoFramePreviewSource>();
 #elif ANDROID
         var androidAudioEncoder = new SIPSorcery.Media.AudioEncoder();
         var androidAudioEndPoint = new Ringly.Samples.Maui.Platforms.Android.AndroidAudioEndPoint(androidAudioEncoder);
         builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSource>(androidAudioEndPoint);
         builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IAudioSink>(androidAudioEndPoint);
+
+        // Headless CameraX capture — see AndroidCameraXVideoEndPoint's own class comment and
+        // MainPage.xaml's comment for why Android doesn't need a native CameraView attached the
+        // way Windows does.
+        var androidVideoEndPoint = new Ringly.Samples.Maui.Platforms.Android.AndroidCameraXVideoEndPoint();
+        builder.Services.AddSingleton(androidVideoEndPoint);
+        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IVideoSource>(androidVideoEndPoint);
+        builder.Services.AddSingleton<SIPSorceryMedia.Abstractions.IVideoSink>(androidVideoEndPoint);
+        builder.Services.AddSingleton<Ringly.Samples.Maui.Platforms.Android.IAndroidVideoCaptureEndPoint>(androidVideoEndPoint);
+        builder.Services.AddSingleton<IVideoFramePreviewSource, AndroidVideoFramePreviewSource>();
 #endif
 
         builder.Services.AddSingleton<ICallClient, SipSorceryCallClient>();
