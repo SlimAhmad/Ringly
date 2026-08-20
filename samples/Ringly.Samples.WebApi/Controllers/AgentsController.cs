@@ -80,20 +80,29 @@ public class AgentsController : RESTFulController
 
             return this.Ok(value: new ClaimResult { Claimed = true, ChannelId = channelId });
         }
+        // Every branch below releases the claim — confirmed live as a real bug: a failed
+        // ConnectAgentToQueueAsync (e.g. the agent's own device never answers within its 30s
+        // Stasis-entry timeout) previously left the claim permanently burned, since TryClaim above
+        // had already marked the channel claimed. Without releasing it here, the customer became
+        // unclaimable forever — not even a retry by the same agent could get past AlreadyClaimed.
         catch (CallSessionValidationException callSessionValidationException)
         {
+            this.supportQueueBroadcastRegistry.ReleaseClaim(channelId);
             return this.BadRequest(callSessionValidationException.InnerException);
         }
         catch (CallSessionDependencyValidationException callSessionDependencyValidationException)
         {
+            this.supportQueueBroadcastRegistry.ReleaseClaim(channelId);
             return this.BadRequest(callSessionDependencyValidationException.InnerException);
         }
         catch (CallProviderDependencyException callProviderDependencyException)
         {
+            this.supportQueueBroadcastRegistry.ReleaseClaim(channelId);
             return this.InternalServerError(callProviderDependencyException);
         }
         catch (CallProviderServiceException callProviderServiceException)
         {
+            this.supportQueueBroadcastRegistry.ReleaseClaim(channelId);
             return this.InternalServerError(callProviderServiceException);
         }
     }

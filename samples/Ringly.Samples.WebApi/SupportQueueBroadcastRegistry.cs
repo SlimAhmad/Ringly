@@ -54,4 +54,13 @@ public class SupportQueueBroadcastRegistry
             ? ClaimAttemptResult.Claimed
             : ClaimAttemptResult.AlreadyClaimed;
     }
+
+    // Confirmed live as a real bug: TryClaim marks a channel claimed up front (correct — it must,
+    // to keep the "first claim wins" check atomic against a concurrent second claim), but if
+    // ConnectAgentToQueueAsync then fails (e.g. the agent's own device never answers within
+    // ConnectAgentToQueueAsync's 30s Stasis-entry timeout), the claim was never released — the
+    // customer became permanently unclaimable, since every subsequent attempt (even a retry by the
+    // same agent) saw AlreadyClaimed forever. AgentsController.PostClaimAsync calls this in every
+    // failure branch after a successful TryClaim so a failed connect attempt can be retried.
+    public void ReleaseClaim(string channelId) => this.claimedChannelIds.TryRemove(channelId, out _);
 }
