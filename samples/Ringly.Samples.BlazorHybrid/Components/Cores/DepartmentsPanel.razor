@@ -1,0 +1,48 @@
+@* Core Component — integrates with exactly one view service (IDepartmentsViewService), per
+   the-standard-architecture's UI rules. Lets an operator register/view/remove support queues
+   ("departments") instead of needing to already know an exact queue name (e.g. via curl). *@
+@using Ringly.Samples.BlazorHybrid.Components.Bases
+@using Ringly.Samples.BlazorHybrid.ViewServices.Departments
+@implements IDisposable
+
+<section class="mx-auto flex max-w-md flex-col gap-3 rounded-xl bg-slate-900 p-4">
+    <h2 class="text-sm font-medium text-slate-400">Departments</h2>
+
+    <div class="flex gap-2">
+        <AppTextInput CssClass="flex-1 rounded-lg bg-slate-800 px-3 py-2 text-slate-100 placeholder-slate-500"
+                      Placeholder="New department name"
+                      Value="@this.ViewService.NewDepartmentName"
+                      ValueChanged="@(value => this.ViewService.NewDepartmentName = value)" />
+        <AppButton CssClass="rounded-lg bg-indigo-700 px-3 py-2 font-medium text-white hover:bg-indigo-600"
+                   IsDisabled="@this.ViewService.IsBusy"
+                   OnClick="@this.OnCreateClickedAsync">
+            + Add
+        </AppButton>
+    </div>
+
+    @if (this.ViewService.Departments.Count == 0)
+    {
+        <p class="text-sm text-slate-500">No departments registered yet.</p>
+    }
+    else
+    {
+        <ul class="flex flex-col gap-1">
+            @foreach (var department in this.ViewService.Departments)
+            {
+                <li class="flex items-center justify-between rounded-lg bg-slate-800 px-3 py-2">
+                    <span class="text-slate-100">@department.QueueName</span>
+                    <AppButton CssClass="rounded-lg bg-red-900 px-2 py-1 text-xs font-medium text-red-200 hover:bg-red-800"
+                               IsDisabled="@this.ViewService.IsBusy"
+                               OnClick="@(() => this.OnRemoveClickedAsync(department.QueueName))">
+                        Remove
+                    </AppButton>
+                </li>
+            }
+        </ul>
+    }
+
+    @if (!string.IsNullOrEmpty(this.ViewService.StatusMessage))
+    {
+        <p class="text-sm @this.ViewService.StatusMessageColorClass">@this.ViewService.StatusMessage</p>
+    }
+</section>

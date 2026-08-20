@@ -11,9 +11,13 @@ namespace Ringly.Samples.WebApi.Controllers;
 public class QueuesController : RESTFulController
 {
     private readonly ICallCenterProvider callCenterProvider;
+    private readonly IQueueRegistry queueRegistry;
 
-    public QueuesController(ICallCenterProvider callCenterProvider) =>
+    public QueuesController(ICallCenterProvider callCenterProvider, IQueueRegistry queueRegistry)
+    {
         this.callCenterProvider = callCenterProvider;
+        this.queueRegistry = queueRegistry;
+    }
 
     [HttpPost]
     public async ValueTask<ActionResult<HoldingBridge>> PostQueueAsync(CreateQueueRequest request)
@@ -41,6 +45,22 @@ public class QueuesController : RESTFulController
         {
             return this.InternalServerError(queueConfigServiceException);
         }
+    }
+
+    // Read-only, purely a UI/API convenience — no business logic to wrap, so IQueueRegistry (an
+    // app-level persistence contract, see docs/call-center.md) is injected directly rather than
+    // through ICallCenterProvider, the same precedent SupportQueueBroadcastRegistry established
+    // for direct app-level registry access from a controller.
+    [HttpGet]
+    public async ValueTask<ActionResult<IReadOnlyList<HoldingBridge>>> GetQueuesAsync() =>
+        this.Ok(await this.queueRegistry.RetrieveAllAsync());
+
+    [HttpDelete("{queueName}")]
+    public async ValueTask<ActionResult> DeleteQueueAsync(string queueName)
+    {
+        await this.queueRegistry.RemoveAsync(queueName);
+
+        return this.Ok();
     }
 }
 

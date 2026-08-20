@@ -18,4 +18,13 @@ public class InMemoryQueueRegistry : IQueueRegistry
         this.queues[holdingBridge.QueueName] = holdingBridge;
         return ValueTask.CompletedTask;
     }
+
+    public ValueTask<IReadOnlyList<HoldingBridge>> RetrieveAllAsync() =>
+        ValueTask.FromResult<IReadOnlyList<HoldingBridge>>(this.queues.Values.ToList());
+
+    public ValueTask RemoveAsync(string queueName)
+    {
+        this.queues.TryRemove(queueName, out _);
+        return ValueTask.CompletedTask;
+    }
 }
