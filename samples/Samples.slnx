@@ -1,4 +1,15 @@
 <Solution>
+  <Folder Name="/Libraries/">
+    <Project Path="../Ringly.Abstractions/Ringly.Abstractions.csproj" />
+    <Project Path="../Ringly.Asterisk/Ringly.Asterisk.csproj" />
+    <Project Path="../Ringly.CallCenter.Abstractions/Ringly.CallCenter.Abstractions.csproj" />
+    <Project Path="../Ringly.CallCenter.Asterisk/Ringly.CallCenter.Asterisk.csproj" />
+    <Project Path="../Ringly.CallCenter.Twilio/Ringly.CallCenter.Twilio.csproj" />
+    <Project Path="../Ringly.Client.Abstractions/Ringly.Client.Abstractions.csproj" />
+    <Project Path="../Ringly.Client.SipSorcery/Ringly.Client.SipSorcery.csproj" />
+    <Project Path="../Ringly.Storage.Abstractions/Ringly.Storage.Abstractions.csproj" />
+    <Project Path="../Ringly.Twilio/Ringly.Twilio.csproj" />
+  </Folder>
   <Project Path="Ringly.Samples.BlazorHybrid/Ringly.Samples.BlazorHybrid.csproj" />
   <Project Path="Ringly.Samples.BlazorServer/Ringly.Samples.BlazorServer.csproj" />
   <Project Path="Ringly.Samples.Console/Ringly.Samples.Console.csproj" />
