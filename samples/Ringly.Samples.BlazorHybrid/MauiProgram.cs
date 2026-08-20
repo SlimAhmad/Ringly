@@ -50,7 +50,7 @@ public static class MauiProgram
         // copy (not shared) since each sample app is its own MAUI process with its own DI
         // container; edit both if your dev stack's address changes.
         // ringly:lan-ip
-        const string CurrentLanHostAddress = "192.168.1.92";
+        const string CurrentLanHostAddress = "10.205.226.49";
 
         string host = DeviceInfo.Platform == DevicePlatform.Android
             ? (DeviceInfo.Current.DeviceType == DeviceType.Virtual ? "10.0.2.2" : CurrentLanHostAddress)
