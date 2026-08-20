@@ -1,0 +1,90 @@
+@* Core Component — integrates with exactly one view service (IRecordingViewService), per
+   the-standard-architecture's UI rules. Starts/lists/controls recordings against whatever bridge
+   the agent's active claimed call is using (see IRecordingViewService's own comment). *@
+@using Ringly.Samples.BlazorServer.Components.Bases
+@using Ringly.Samples.BlazorServer.ViewServices.Recordings
+@implements IDisposable
+
+<section class="mx-auto flex max-w-md flex-col gap-3 rounded-xl bg-slate-900 p-4">
+    <h2 class="text-sm font-medium text-slate-400">Recordings</h2>
+
+    @if (string.IsNullOrWhiteSpace(this.ViewService.CurrentBridgeId))
+    {
+        <p class="text-sm text-slate-500">No active call — claim a call to record it.</p>
+    }
+    else
+    {
+        <p class="text-xs text-slate-500">Active bridge: @this.ViewService.CurrentBridgeId</p>
+
+        <div class="flex gap-2">
+            <AppTextInput CssClass="flex-1 rounded-lg bg-slate-800 px-3 py-2 text-slate-100 placeholder-slate-500"
+                          Placeholder="Recording name"
+                          Value="@this.ViewService.NewRecordingName"
+                          ValueChanged="@(value => this.ViewService.NewRecordingName = value)" />
+            <AppButton CssClass="rounded-lg bg-indigo-700 px-3 py-2 font-medium text-white hover:bg-indigo-600"
+                       IsDisabled="@this.ViewService.IsBusy"
+                       OnClick="@this.OnCreateClickedAsync">
+                ● Record
+            </AppButton>
+        </div>
+    }
+
+    @if (this.ViewService.Recordings.Count == 0)
+    {
+        <p class="text-sm text-slate-500">No recordings yet.</p>
+    }
+    else
+    {
+        <ul class="flex flex-col gap-2">
+            @foreach (var recording in this.ViewService.Recordings)
+            {
+                <li class="flex flex-col gap-1 rounded-lg bg-slate-800 px-3 py-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-slate-100">@recording.RecordingName</span>
+                        <span class="text-xs text-slate-400">@recording.State</span>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(recording.BlobUrl))
+                    {
+                        <a href="@recording.BlobUrl" target="_blank" class="text-xs text-indigo-400 hover:underline break-all">
+                            @recording.BlobUrl
+                        </a>
+                    }
+
+                    <div class="flex flex-wrap gap-1">
+                        <AppButton CssClass="rounded-lg bg-slate-700 px-2 py-1 text-xs font-medium text-slate-100 hover:bg-slate-600"
+                                   IsDisabled="@this.ViewService.IsBusy"
+                                   OnClick="@(() => this.OnPauseClickedAsync(recording.RecordingName))">
+                            Pause
+                        </AppButton>
+                        <AppButton CssClass="rounded-lg bg-slate-700 px-2 py-1 text-xs font-medium text-slate-100 hover:bg-slate-600"
+                                   IsDisabled="@this.ViewService.IsBusy"
+                                   OnClick="@(() => this.OnUnpauseClickedAsync(recording.RecordingName))">
+                            Resume
+                        </AppButton>
+                        <AppButton CssClass="rounded-lg bg-amber-800 px-2 py-1 text-xs font-medium text-amber-100 hover:bg-amber-700"
+                                   IsDisabled="@this.ViewService.IsBusy"
+                                   OnClick="@(() => this.OnStopClickedAsync(recording.RecordingName))">
+                            Stop
+                        </AppButton>
+                        <AppButton CssClass="rounded-lg bg-slate-700 px-2 py-1 text-xs font-medium text-slate-100 hover:bg-slate-600"
+                                   IsDisabled="@this.ViewService.IsBusy"
+                                   OnClick="@(() => this.OnCancelClickedAsync(recording.RecordingName))">
+                            Cancel
+                        </AppButton>
+                        <AppButton CssClass="rounded-lg bg-red-900 px-2 py-1 text-xs font-medium text-red-200 hover:bg-red-800"
+                                   IsDisabled="@this.ViewService.IsBusy"
+                                   OnClick="@(() => this.OnRemoveClickedAsync(recording.RecordingName))">
+                            Remove
+                        </AppButton>
+                    </div>
+                </li>
+            }
+        </ul>
+    }
+
+    @if (!string.IsNullOrEmpty(this.ViewService.StatusMessage))
+    {
+        <p class="text-sm @this.ViewService.StatusMessageColorClass">@this.ViewService.StatusMessage</p>
+    }
+</section>

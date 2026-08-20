@@ -47,6 +47,32 @@ services:
       - "8089:8089/tcp"   # WSS (WebRTC/mobile SIP signaling + ARI events)
       - "5038:5038/tcp"   # AMI (internal-only in real deployments; exposed here for local dev)
       - "10000-10099:10000-10099/udp"  # RTP media
+    volumes:
+      # Asterisk's default recording spool path — bind-mounted (not left container-only) so
+      # Ringly.Samples.WebApi, which runs natively on the host rather than in this compose network,
+      # can read a just-finished recording file to upload it to blob storage
+      # (IRecordingStorageProvider.UploadRecordingAsync) once RecordingsController stops it. Same
+      # files, visible at ./asterisk-recordings on the host and /var/spool/asterisk/recording in
+      # the container.
+      - ./asterisk-recordings:/var/spool/asterisk/recording
+    restart: unless-stopped
+
+  # Local Azure Blob Storage emulator (Microsoft's own official image) — backs
+  # Ringly.Storage.AzureBlob's real Azure.Storage.Blobs SDK broker with zero real Azure account
+  # needed for local dev. Ringly.Samples.WebApi's appsettings.json AzureBlob:ConnectionString
+  # points at Azurite's standard well-known dev connection string by default; swap it for a real
+  # Azure Storage connection string to use this stack against a real account instead.
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    # --skipApiVersionCheck: confirmed live — Ringly.Storage.AzureBlob's Azure.Storage.Blobs SDK
+    # sends a newer storage API version than this Azurite image's pinned service version accepts,
+    # which otherwise fails every request with "InvalidHeaderValue" before it even reaches
+    # request-specific logic. Azurite's own error message names this exact flag as the fix.
+    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck"
+    ports:
+      - "10000:10000"   # Blob service (TCP) — distinct from asterisk's 10000-10099/udp RTP range
+    volumes:
+      - azurite_data:/data
     restart: unless-stopped
 
   coturn:
@@ -223,3 +249,4 @@ volumes:
   dograh_postgres_data:
   dograh_redis_data:
   dograh_minio_data:
+  azurite_data:

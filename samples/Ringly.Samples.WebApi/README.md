@@ -20,13 +20,20 @@ dev credentials (`docker/asterisk/config/ari.conf`) — no edits needed for loca
 
 `appsettings.json`'s `ConnectionStrings:DefaultConnection` points at a local SQL
 Server LocalDB instance (`(localdb)\mssqllocaldb`, database `RinglyTelephony`) for
-the `TelephonyIdentity`/`TelephonyDevice`/`TelephonyCall`/`SupportQueue` tables
-— no Docker container needed for this part; `Program.cs` calls
+the `TelephonyIdentity`/`TelephonyDevice`/`TelephonyCall`/`SupportQueue`/`Recording`
+tables — no Docker container needed for this part; `Program.cs` calls
 `Database.Migrate()` once at startup (deliberately not inside `StorageBroker`'s
 own constructor — that blocks `dotnet ef migrations add`'s design-time
 tooling, see its own comment), so the database and schema are created
 automatically on first run if LocalDB is installed (it ships with Visual
 Studio/the SQL Server Express LocalDB installer).
+
+`appsettings.json`'s `AzureBlob` section points at **Azurite** (`docker compose up
+-d azurite` — Microsoft's own local Azure Storage emulator, a plain docker-compose
+service, no real Azure account needed) using its standard well-known dev
+connection string. Swap it for a real Azure Storage connection string to use this
+stack against a real account instead. The blob container is created automatically
+at startup if it doesn't already exist.
 
 ## Endpoints
 
@@ -52,7 +59,7 @@ REST rules: `200`/`201` success, `400` for validation, `404` for not-found,
 
 | Method | Route | Body | Does |
 |---|---|---|---|
-| POST | `/api/queues` | `{ "name": "support", "musicOnHoldClass": "" }` | Creates a holding bridge |
+| POST | `/api/queues` | `{ "name": "support", "musicOnHoldClass": "" }` | Creates a holding bridge, starting music-on-hold on it (falls back to Asterisk's own `default` class if `musicOnHoldClass` is blank — if you hear nothing, the base Asterisk image may not bundle a working `default` class' audio, a known possible infra gap) |
 | GET | `/api/queues` | — | Lists every registered queue ("department") |
 | DELETE | `/api/queues/{queueName}` | — | Removes a queue's registry record (does **not** tear down the underlying Asterisk bridge — see `IQueueRegistry.RemoveAsync`'s own comment) |
 | POST | `/api/calls` | `{ "partyAExtension": "1000", "partyBExtension": "1001" }` | Bridges two known parties directly |
@@ -89,18 +96,28 @@ Call history rows are written automatically as real calls happen — see
 
 | Method | Route | Body | Does |
 |---|---|---|---|
+| GET | `/api/recordings` | — | Lists every recording this app has started (from SQL, not Asterisk — ARI itself has no "list mine" concept) |
 | POST | `/api/recordings` | `{ "bridgeId": "...", "recordingName": "...", "format": "wav" }` | Starts recording a bridge |
 | POST | `/api/recordings/{recordingName}/pause` | — | Pauses |
 | POST | `/api/recordings/{recordingName}/unpause` | — | Resumes |
-| POST | `/api/recordings/{recordingName}/stop` | — | Stops (keeps the stored file) |
+| POST | `/api/recordings/{recordingName}/stop` | — | Stops (keeps the stored file) **and uploads it to Azure Blob Storage** |
 | POST | `/api/recordings/{recordingName}/cancel` | — | Stops and discards |
-| DELETE | `/api/recordings/{recordingName}` | — | Deletes a stored recording |
-| POST | `/api/recordings/{recordingName}/copy?destinationName=` | — | Copies a stored recording |
+| DELETE | `/api/recordings/{recordingName}` | — | Deletes the stored recording (Asterisk + blob, best-effort) and its history row |
+| POST | `/api/recordings/{recordingName}/copy?destinationName=` | — | Copies a stored recording (Asterisk-side only — blob copy isn't implemented) |
 
 A pause/stop/cancel/delete/copy against a recording that no longer exists returns
 `404`, not `500` — Asterisk's own ARI genuinely 404s for that case, since these
 operations act on an already-existing resource (contrast `POST /api/queues`,
 where a 404 really would mean a misconfigured endpoint).
+
+`/stop` is where a recording becomes durable: it reads the finished file from
+`RecordingSpool:Directory` (`appsettings.json`, pointing at
+`docker/asterisk-recordings` — the host side of a bind mount shared with the
+`asterisk` container's own recording spool, see `docker/docker-compose.yml`),
+uploads it via `Ringly.Storage.AzureBlob`, and records the resulting blob URL on
+the recording's own history row. Both Blazor samples' **Recordings** panel uses
+this same list/start/control surface, auto-linked to whichever bridge the
+agent's currently-claimed call is using (no bridge ID to type by hand).
 
 ### Example
 

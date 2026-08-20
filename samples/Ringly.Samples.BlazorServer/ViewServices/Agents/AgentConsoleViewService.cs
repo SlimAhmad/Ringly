@@ -27,6 +27,7 @@ public sealed class AgentConsoleViewService : IAgentConsoleViewService
     public bool IsAvailable { get; private set; }
     public string StatusMessage { get; private set; } = string.Empty;
     public string StatusMessageColorClass { get; private set; } = string.Empty;
+    public string? CurrentBridgeId { get; private set; }
 
     public IReadOnlyList<AgentBroadcastInfo> Broadcasts => this.broadcasts;
 
@@ -123,8 +124,9 @@ public sealed class AgentConsoleViewService : IAgentConsoleViewService
 
         try
         {
-            await this.agentConsoleApiBroker.PostClaimAsync(this.AgentAppName, channelId);
+            ClaimResult claimResult = await this.agentConsoleApiBroker.PostClaimAsync(this.AgentAppName, channelId);
             this.broadcasts.RemoveAll(broadcast => broadcast.ChannelId == channelId);
+            this.CurrentBridgeId = claimResult.BridgeId;
             this.StatusMessage = $"Claimed {channelId}.";
             this.StatusMessageColorClass = "text-emerald-400";
         }
