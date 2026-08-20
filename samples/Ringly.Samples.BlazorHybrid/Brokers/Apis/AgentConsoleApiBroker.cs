@@ -22,7 +22,18 @@ public class AgentConsoleApiBroker : IAgentConsoleApiBroker
         // streaming-response concept (its methods all buffer a complete request/response), and a
         // stream that stays open for the app's lifetime shouldn't share a client instance with
         // ordinary short-lived request/response calls.
-        this.streamingHttpClient = new HttpClient
+        //
+        // Explicit SocketsHttpHandler, not the platform default — confirmed live on Android: raw
+        // curl against the exact same broadcasts endpoint succeeded every time (real 200,
+        // text/event-stream, immediately), yet this client kept throwing on every attempt. .NET
+        // for Android defaults to Xamarin.Android's native AndroidMessageHandler
+        // (UseNativeHttpHandler, on by default since the .NET 6 templates), which is built on
+        // Java's HttpURLConnection/OkHttp and has known real-world issues with true long-lived
+        // chunked streaming responses (SSE) — it buffers or fails in ways a normal
+        // request/response call never surfaces, which is why ordinary calls through the
+        // RESTFulSense-backed apiClient above work fine while only this streaming client fails.
+        // The fully-managed SocketsHttpHandler doesn't have that limitation.
+        this.streamingHttpClient = new HttpClient(new SocketsHttpHandler())
         {
             BaseAddress = new Uri(options.Value.BaseUrl),
             Timeout = Timeout.InfiniteTimeSpan
