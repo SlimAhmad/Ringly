@@ -1,0 +1,48 @@
+@* Core Component — integrates with exactly one view service (IAgentConsoleViewService), per
+   the-standard-architecture's UI rules. Markup/code-behind separated (AgentConsole.razor.cs).
+   Recording controls during an active claimed call are explicitly out of scope for this slice —
+   see the Part 8c issue for why. *@
+@using Ringly.Samples.BlazorHybrid.Components.Bases
+@using Ringly.Samples.BlazorHybrid.ViewServices.Agents
+@implements IDisposable
+
+<section class="mx-auto flex max-w-md flex-col gap-3 rounded-xl bg-slate-900 p-4">
+    <h2 class="text-sm font-medium text-slate-400">Agent console</h2>
+
+    <AppTextInput CssClass="rounded-lg bg-slate-800 px-3 py-2 text-slate-100 placeholder-slate-500"
+                  Placeholder="Agent app name"
+                  Value="@this.ViewService.AgentAppName"
+                  ValueChanged="@(value => this.ViewService.AgentAppName = value)" />
+
+    <AppButton CssClass="@($"rounded-lg px-3 py-2 font-medium text-white {(this.ViewService.IsAvailable ? "bg-emerald-600 hover:bg-emerald-500" : "bg-slate-700 hover:bg-slate-600")}")"
+               OnClick="@this.OnToggleAvailabilityClickedAsync">
+        @(this.ViewService.IsAvailable ? "🟢 Available" : "⚪ Unavailable")
+    </AppButton>
+
+    @if (!string.IsNullOrEmpty(this.ViewService.StatusMessage))
+    {
+        <p class="text-sm @this.ViewService.StatusMessageColorClass">@this.ViewService.StatusMessage</p>
+    }
+
+    <div class="flex flex-col gap-2">
+        <h3 class="text-xs font-medium text-slate-500">Incoming calls</h3>
+
+        @if (this.ViewService.Broadcasts.Count == 0)
+        {
+            <p class="text-xs text-slate-500">No pending calls.</p>
+        }
+
+        @foreach (var broadcast in this.ViewService.Broadcasts)
+        {
+            <div class="flex items-center justify-between rounded-lg bg-slate-800 px-3 py-2">
+                <span class="text-sm text-slate-200">
+                    @broadcast.CallerNumber → @broadcast.CalledExtension
+                </span>
+                <AppButton CssClass="rounded-lg bg-indigo-600 px-3 py-1 text-sm font-medium text-white hover:bg-indigo-500"
+                           OnClick="@(() => this.OnClaimClickedAsync(broadcast.ChannelId))">
+                    Claim
+                </AppButton>
+            </div>
+        }
+    </div>
+</section>
