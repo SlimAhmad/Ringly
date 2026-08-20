@@ -34,10 +34,10 @@ public partial class CallPage : ContentPage
     // Whether the CURRENT call actually offered video — an Audio Call (see
     // OnAudioCallClicked/PlaceCallAsync) never calls IVideoSource.StartVideo() at all (no video
     // "m=" line to negotiate a format against), so the camera session genuinely never starts even
-    // though a video endpoint is registered. Defaults to true so an ANSWERED call (AnswerCallAsync
-    // doesn't currently expose whether the incoming offer had video) keeps its prior behavior of
-    // just following whether a video endpoint exists at all.
-    private bool currentCallIncludesVideo = true;
+    // though a video endpoint is registered. Set from PlaceCallAsync's own includeVideo argument
+    // for outgoing calls, and from CallClientEvent.IncludesVideo (parsed from the real SDP offer
+    // by SipSorceryCallClient.HandleIncomingCall) for incoming ones.
+    private bool currentCallIncludesVideo;
 
 #if WINDOWS
     private readonly Platforms.Windows.CustomWindowsVideoEndPoint? windowsVideoEndPoint;
@@ -235,6 +235,7 @@ public partial class CallPage : ContentPage
         {
             case "IncomingCall":
                 this.incomingCallHandle = callEvent.Handle;
+                this.currentCallIncludesVideo = callEvent.IncludesVideo;
                 this.ShowIncoming(callEvent.RemoteExtension);
                 break;
 
@@ -458,7 +459,7 @@ public partial class CallPage : ContentPage
         this.isMuted = false;
         this.isSpeakerOn = false;
         this.isVideoMuted = false;
-        this.currentCallIncludesVideo = true;
+        this.currentCallIncludesVideo = false;
         this.RemoteVideoImage.IsVisible = false;
         this.RemoteVideoImage.Source = null;
         this.LocalCameraView.IsVisible = false;

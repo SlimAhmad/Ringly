@@ -279,6 +279,7 @@ public sealed class CallViewService : ICallViewService
         {
             case "IncomingCall":
                 this.incomingCallHandle = callEvent.Handle;
+                this.CurrentCallIncludesVideo = callEvent.IncludesVideo;
                 this.ShowIncoming(callEvent.RemoteExtension);
                 break;
 
