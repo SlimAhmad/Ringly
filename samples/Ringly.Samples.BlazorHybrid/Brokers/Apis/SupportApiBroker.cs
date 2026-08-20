@@ -11,7 +11,16 @@ public class SupportApiBroker : ISupportApiBroker
 
     public SupportApiBroker(IOptions<SupportApiOptions> options)
     {
-        var httpClient = new HttpClient
+        // Explicit SocketsHttpHandler, not the platform default — see AgentConsoleApiBroker's own
+        // comment for the full story on .NET for Android's native AndroidMessageHandler. That fix
+        // was found chasing a stuck SSE stream, but the same handler misbehaves on any
+        // slow-to-complete request, not just streams: confirmed live that PostSupportRouteAsync
+        // ("Request support") failed with a generic "connection failure" on Android specifically
+        // — PostRouteAsync's own RouteToQueueAsync deliberately blocks server-side until the
+        // customer answers the call it just originated (up to 30s), and the native handler drops
+        // the connection well before that, unlike ordinary fast calls (e.g. PostCredentialsAsync)
+        // which never hit this.
+        var httpClient = new HttpClient(new SocketsHttpHandler())
         {
             BaseAddress = new Uri(options.Value.BaseUrl)
         };

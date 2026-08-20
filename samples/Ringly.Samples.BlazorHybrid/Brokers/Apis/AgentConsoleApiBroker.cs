@@ -15,7 +15,13 @@ public class AgentConsoleApiBroker : IAgentConsoleApiBroker
     // than a duplicate options type, since both brokers target the same server.
     public AgentConsoleApiBroker(IOptions<SupportApiOptions> options)
     {
-        var httpClient = new HttpClient { BaseAddress = new Uri(options.Value.BaseUrl) };
+        // Explicit SocketsHttpHandler here too, not just on streamingHttpClient below — see
+        // SupportApiBroker's own comment: this.apiClient's PostClaimAsync now (via
+        // AgentsController.PostClaimAsync -> ICallProvider.ConnectAgentToQueueAsync) also
+        // deliberately blocks server-side while originating a real call to the claiming agent, so
+        // it's exposed to the exact same native-handler "connection failure" risk on Android that
+        // PostSupportRouteAsync hit.
+        var httpClient = new HttpClient(new SocketsHttpHandler()) { BaseAddress = new Uri(options.Value.BaseUrl) };
         this.apiClient = new RESTFulApiFactoryClient(httpClient);
 
         // Separate HttpClient for the SSE stream — IRESTFulApiFactoryClient has no
