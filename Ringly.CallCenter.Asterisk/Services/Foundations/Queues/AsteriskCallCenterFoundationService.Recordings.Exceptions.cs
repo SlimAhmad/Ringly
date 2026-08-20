@@ -40,12 +40,17 @@ public partial class AsteriskCallCenterFoundationService
 
             throw await CreateAndLogRecordingCriticalDependencyException(failedAsteriskRecordingDependencyException);
         }
+        // NOT the same critical-dependency bucket as Unauthorized/Forbidden above — every
+        // recording operation acts on an already-existing resource (recordings/live/{name},
+        // recordings/stored/{name}, bridges/{bridgeId}/record), and Asterisk's real ARI genuinely
+        // 404s when that resource is simply gone (recording already stopped, bridge doesn't
+        // exist) — an expected, client-facing outcome, not an infrastructure failure. Contrast
+        // CreateQueueAsync's own NotFound handling, which stays critical there because that's a
+        // *creating* call where a 404 really does mean a misconfigured endpoint.
         catch (HttpResponseNotFoundException httpResponseNotFoundException)
         {
-            var failedAsteriskRecordingDependencyException =
-                new FailedAsteriskRecordingDependencyException(httpResponseNotFoundException);
-
-            throw await CreateAndLogRecordingCriticalDependencyException(failedAsteriskRecordingDependencyException);
+            var notFoundRecordingException = new NotFoundRecordingException(httpResponseNotFoundException);
+            throw await CreateAndLogRecordingDependencyValidationException(notFoundRecordingException);
         }
         catch (HttpRequestException httpRequestException)
         {
@@ -111,12 +116,17 @@ public partial class AsteriskCallCenterFoundationService
 
             throw await CreateAndLogRecordingCriticalDependencyException(failedAsteriskRecordingDependencyException);
         }
+        // NOT the same critical-dependency bucket as Unauthorized/Forbidden above — every
+        // recording operation acts on an already-existing resource (recordings/live/{name},
+        // recordings/stored/{name}, bridges/{bridgeId}/record), and Asterisk's real ARI genuinely
+        // 404s when that resource is simply gone (recording already stopped, bridge doesn't
+        // exist) — an expected, client-facing outcome, not an infrastructure failure. Contrast
+        // CreateQueueAsync's own NotFound handling, which stays critical there because that's a
+        // *creating* call where a 404 really does mean a misconfigured endpoint.
         catch (HttpResponseNotFoundException httpResponseNotFoundException)
         {
-            var failedAsteriskRecordingDependencyException =
-                new FailedAsteriskRecordingDependencyException(httpResponseNotFoundException);
-
-            throw await CreateAndLogRecordingCriticalDependencyException(failedAsteriskRecordingDependencyException);
+            var notFoundRecordingException = new NotFoundRecordingException(httpResponseNotFoundException);
+            throw await CreateAndLogRecordingDependencyValidationException(notFoundRecordingException);
         }
         catch (HttpRequestException httpRequestException)
         {

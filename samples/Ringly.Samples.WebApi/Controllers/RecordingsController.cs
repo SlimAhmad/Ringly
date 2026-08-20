@@ -124,6 +124,10 @@ public class RecordingsController : RESTFulController
         RecordingValidationException recordingValidationException =>
             this.BadRequest(recordingValidationException.InnerException),
 
+        RecordingDependencyValidationException recordingDependencyValidationException
+            when recordingDependencyValidationException.InnerException is NotFoundRecordingException =>
+                this.NotFound(recordingDependencyValidationException.InnerException),
+
         RecordingDependencyValidationException recordingDependencyValidationException =>
             this.BadRequest(recordingDependencyValidationException.InnerException),
 
