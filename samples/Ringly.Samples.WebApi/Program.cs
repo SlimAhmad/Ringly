@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Ringly.Abstractions;
 using Ringly.Asterisk.Brokers;
 using Ringly.Asterisk.Services.Foundations.CallSessions;
@@ -7,6 +8,7 @@ using Ringly.CallCenter.Abstractions;
 using Ringly.CallCenter.Asterisk.Services.Foundations.Queues;
 using Ringly.Samples.WebApi;
 using Ringly.Samples.WebApi.Brokers.Storages;
+using Ringly.Samples.WebApi.Services.Foundations.SupportQueues;
 using Ringly.Samples.WebApi.Services.Foundations.TelephonyCalls;
 using Ringly.Samples.WebApi.Services.Foundations.TelephonyDevices;
 using Ringly.Samples.WebApi.Services.Foundations.TelephonyIdentities;
@@ -31,7 +33,13 @@ builder.Services.AddSingleton<IAsteriskBroker, AsteriskBroker>();
 // IStorageBroker (a DbContext) — so this must be Scoped too, not Singleton like the
 // InMemorySipCredentialsStore it replaces (a Singleton can't depend on a Scoped service).
 builder.Services.AddScoped<ISipCredentialsStore, SqlSipCredentialsStore>();
-builder.Services.AddSingleton<IQueueRegistry, InMemoryQueueRegistry>();
+
+// SqlQueueRegistry depends on ISupportQueueService, which depends on the Scoped IStorageBroker —
+// so this must be Scoped too, not Singleton like the InMemoryQueueRegistry it replaces (same
+// reasoning as ISipCredentialsStore's own registration above). Queues created via the UI/API now
+// survive a WebApi restart instead of vanishing with the in-memory registry.
+builder.Services.AddScoped<IQueueRegistry, SqlQueueRegistry>();
+builder.Services.AddScoped<ISupportQueueService, SupportQueueService>();
 
 // Ties SupportController's real customer-routing flow to AgentsController's broadcast/claim
 // endpoints — see SupportQueueBroadcastRegistry's own comment for the full rationale.
@@ -64,6 +72,22 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<RideHailingCallRou
 builder.Services.AddHostedService<TelephonyCallTrackingService>();
 
 var app = builder.Build();
+
+// Moved out of StorageBroker's own constructor — a DbContext constructor calling Database.Migrate()
+// blocks EF Core's design-time tooling outright: `dotnet ef migrations add` instantiates the
+// context via its real constructor to read the current model, and once that model has ANY pending
+// change (exactly the situation right before adding a new migration for it), Migrate() throws
+// PendingModelChangesWarning as an error before the new migration can even be scaffolded — a
+// chicken-and-egg problem confirmed live while adding the SupportQueues migration. Calling it once
+// here instead, against a real DI scope, keeps the "auto-create schema on startup" behavior without
+// ever running as a side effect of the design-time tooling itself.
+using (IServiceScope migrationScope = app.Services.CreateScope())
+{
+    var storageBroker = (Ringly.Samples.WebApi.Brokers.Storages.StorageBroker)
+        migrationScope.ServiceProvider.GetRequiredService<IStorageBroker>();
+
+    storageBroker.Database.Migrate();
+}
 
 if (app.Environment.IsDevelopment())
 {

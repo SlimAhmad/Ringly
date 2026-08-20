@@ -20,9 +20,11 @@ dev credentials (`docker/asterisk/config/ari.conf`) — no edits needed for loca
 
 `appsettings.json`'s `ConnectionStrings:DefaultConnection` points at a local SQL
 Server LocalDB instance (`(localdb)\mssqllocaldb`, database `RinglyTelephony`) for
-the `TelephonyIdentity`/`TelephonyDevice`/`TelephonyCall` tables — no Docker
-container needed for this part; `StorageBroker`'s constructor calls
-`Database.Migrate()` on startup, so the database and schema are created
+the `TelephonyIdentity`/`TelephonyDevice`/`TelephonyCall`/`SupportQueue` tables
+— no Docker container needed for this part; `Program.cs` calls
+`Database.Migrate()` once at startup (deliberately not inside `StorageBroker`'s
+own constructor — that blocks `dotnet ef migrations add`'s design-time
+tooling, see its own comment), so the database and schema are created
 automatically on first run if LocalDB is installed (it ships with Visual
 Studio/the SQL Server Express LocalDB installer).
 
@@ -51,8 +53,16 @@ REST rules: `200`/`201` success, `400` for validation, `404` for not-found,
 | Method | Route | Body | Does |
 |---|---|---|---|
 | POST | `/api/queues` | `{ "name": "support", "musicOnHoldClass": "" }` | Creates a holding bridge |
+| GET | `/api/queues` | — | Lists every registered queue ("department") |
+| DELETE | `/api/queues/{queueName}` | — | Removes a queue's registry record (does **not** tear down the underlying Asterisk bridge — see `IQueueRegistry.RemoveAsync`'s own comment) |
 | POST | `/api/calls` | `{ "partyAExtension": "1000", "partyBExtension": "1001" }` | Bridges two known parties directly |
 | POST | `/api/support/{clientId}/route?queueName=support` | — | Cold support entry — routes a provisioned client into a queue |
+
+Queues are persisted in SQL Server (`SupportQueue`, via `SqlQueueRegistry`) — they
+survive a WebApi restart, unlike the earlier in-memory registry. Both Blazor
+sample apps have a **Departments** panel that creates/lists/removes queues
+through these same endpoints, so the queue name for the "Request support" flow
+doesn't have to be typed from memory or created via a raw `curl` call.
 
 ### Telephony identities, devices, call history
 
@@ -111,8 +121,9 @@ against any of the Blazor sample apps' Call screen + Support panel + Agent
 Console (`Ringly.Samples.BlazorHybrid`/`Ringly.Samples.BlazorServer` — Maui has
 no Agent Console):
 
-1. Create a queue once (per queue name you intend to use):
-   `POST /api/queues { "name": "support" }`.
+1. Create a queue once (per queue name you intend to use) — either
+   `POST /api/queues { "name": "support" }`, or use either Blazor sample's
+   **Departments** panel to do it from the UI instead.
 2. **Customer**: open the app's Support panel, enter queue name `support`, tap
    "Request support". This provisions a fresh SIP identity, registers it, and
    routes it into the queue — but that means Asterisk originates a real call

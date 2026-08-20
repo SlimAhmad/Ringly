@@ -13,11 +13,8 @@ public partial class StorageBroker : EFxceptionsContext, IStorageBroker
 {
     private readonly IConfiguration configuration;
 
-    public StorageBroker(IConfiguration configuration)
-    {
+    public StorageBroker(IConfiguration configuration) =>
         this.configuration = configuration;
-        this.Database.Migrate();
-    }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -33,6 +30,7 @@ public partial class StorageBroker : EFxceptionsContext, IStorageBroker
         this.ConfigureTelephonyIdentities(modelBuilder);
         this.ConfigureTelephonyDevices(modelBuilder);
         this.ConfigureTelephonyCalls(modelBuilder);
+        this.ConfigureSupportQueues(modelBuilder);
     }
 
     private async ValueTask<T> InsertAsync<T>(T entity) where T : class
