@@ -50,6 +50,20 @@ public class RideHailingCallRouter : BackgroundService, ICallLifecycleEventSourc
 
     public IObservable<CallLifecycleEvent> StreamCallLifecycleEvents() => this.callLifecycleEvents.AsObservable();
 
+    // Lets AgentsController register a claimed customer<->agent pair into this router's own
+    // hangup-cascade watch (peerChannelIdByChannelId/HandleStasisEndAsync below) without
+    // duplicating that logic. Confirmed live as a real gap otherwise: when either side of a
+    // claimed call hung up, the other side's channel just stayed connected indefinitely — nothing
+    // was watching for one leg's StasisEnd to hang up the other, unlike ride-hailing's own
+    // directly-dialed calls, which this router already handles. No CallId/CallLifecycleEvent
+    // tracking for this pair — that's specific to ride-hailing's own call-history reporting, not
+    // needed here.
+    public void RegisterPeerChannels(string channelIdA, string channelIdB)
+    {
+        this.peerChannelIdByChannelId[channelIdA] = channelIdB;
+        this.peerChannelIdByChannelId[channelIdB] = channelIdA;
+    }
+
     private sealed record PendingCall(string BridgeId, string CallerChannelId);
 
     public RideHailingCallRouter(IAsteriskBroker asteriskBroker, ILogger<RideHailingCallRouter> logger)

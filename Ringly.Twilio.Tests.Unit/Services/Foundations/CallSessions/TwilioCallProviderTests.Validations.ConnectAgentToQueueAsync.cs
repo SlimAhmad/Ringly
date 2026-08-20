@@ -15,6 +15,7 @@ public partial class TwilioCallProviderTests
         string? invalidBridgeId)
     {
         // given
+        string someCustomerChannelId = GetRandomString();
         string someAgentExtension = GetRandomString();
 
         var invalidConnectAgentToQueueRequestException = new InvalidConnectAgentToQueueRequestException();
@@ -27,8 +28,47 @@ public partial class TwilioCallProviderTests
             new CallSessionValidationException(invalidConnectAgentToQueueRequestException);
 
         // when
-        ValueTask<Channel> connectTask =
-            this.twilioCallProvider.ConnectAgentToQueueAsync(invalidBridgeId!, someAgentExtension);
+        ValueTask<Channel> connectTask = this.twilioCallProvider.ConnectAgentToQueueAsync(
+            invalidBridgeId!, someCustomerChannelId, someAgentExtension);
+
+        CallSessionValidationException actualException =
+            await Assert.ThrowsAsync<CallSessionValidationException>(connectTask.AsTask);
+
+        // then
+        actualException.Should().BeEquivalentTo(expectedValidationException);
+
+        this.loggingBrokerMock.Verify(broker =>
+            broker.LogErrorAsync(It.Is(SameExceptionAs(expectedValidationException))),
+                Times.Once);
+
+        this.twilioBrokerMock.VerifyNoOtherCalls();
+        this.sipCredentialsStoreMock.VerifyNoOtherCalls();
+        this.loggingBrokerMock.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task ShouldThrowValidationExceptionOnConnectAgentToQueueIfCustomerChannelIdIsInvalidAndLogItAsync(
+        string? invalidCustomerChannelId)
+    {
+        // given
+        string someBridgeId = GetRandomString();
+        string someAgentExtension = GetRandomString();
+
+        var invalidConnectAgentToQueueRequestException = new InvalidConnectAgentToQueueRequestException();
+
+        invalidConnectAgentToQueueRequestException.UpsertDataList(
+            key: "customerChannelId",
+            value: "Value is required");
+
+        var expectedValidationException =
+            new CallSessionValidationException(invalidConnectAgentToQueueRequestException);
+
+        // when
+        ValueTask<Channel> connectTask = this.twilioCallProvider.ConnectAgentToQueueAsync(
+            someBridgeId, invalidCustomerChannelId!, someAgentExtension);
 
         CallSessionValidationException actualException =
             await Assert.ThrowsAsync<CallSessionValidationException>(connectTask.AsTask);
@@ -54,6 +94,7 @@ public partial class TwilioCallProviderTests
     {
         // given
         string someBridgeId = GetRandomString();
+        string someCustomerChannelId = GetRandomString();
 
         var invalidConnectAgentToQueueRequestException = new InvalidConnectAgentToQueueRequestException();
 
@@ -65,8 +106,8 @@ public partial class TwilioCallProviderTests
             new CallSessionValidationException(invalidConnectAgentToQueueRequestException);
 
         // when
-        ValueTask<Channel> connectTask =
-            this.twilioCallProvider.ConnectAgentToQueueAsync(someBridgeId, invalidAgentExtension!);
+        ValueTask<Channel> connectTask = this.twilioCallProvider.ConnectAgentToQueueAsync(
+            someBridgeId, someCustomerChannelId, invalidAgentExtension!);
 
         CallSessionValidationException actualException =
             await Assert.ThrowsAsync<CallSessionValidationException>(connectTask.AsTask);

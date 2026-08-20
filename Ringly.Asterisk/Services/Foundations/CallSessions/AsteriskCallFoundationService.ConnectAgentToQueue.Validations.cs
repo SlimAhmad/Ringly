@@ -4,7 +4,8 @@ namespace Ringly.Asterisk.Services.Foundations.CallSessions;
 
 public partial class AsteriskCallFoundationService
 {
-    private static void ValidateConnectAgentToQueueRequest(string bridgeId, string agentExtension)
+    private static void ValidateConnectAgentToQueueRequest(
+        string bridgeId, string customerChannelId, string agentExtension)
     {
         var invalidConnectAgentToQueueRequestException = new InvalidConnectAgentToQueueRequestException();
 
@@ -12,6 +13,13 @@ public partial class AsteriskCallFoundationService
         {
             invalidConnectAgentToQueueRequestException.UpsertDataList(
                 key: nameof(bridgeId),
+                value: "Value is required");
+        }
+
+        if (string.IsNullOrWhiteSpace(customerChannelId))
+        {
+            invalidConnectAgentToQueueRequestException.UpsertDataList(
+                key: nameof(customerChannelId),
                 value: "Value is required");
         }
 

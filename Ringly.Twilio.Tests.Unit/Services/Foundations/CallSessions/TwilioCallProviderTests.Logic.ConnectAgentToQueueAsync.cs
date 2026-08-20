@@ -12,6 +12,7 @@ public partial class TwilioCallProviderTests
     {
         // given
         string someBridgeId = GetRandomString();
+        string someCustomerChannelId = GetRandomString();
         string someAgentExtension = GetRandomString();
 
         var returnedParticipant = new TwilioParticipant
@@ -28,8 +29,8 @@ public partial class TwilioCallProviderTests
                     .ReturnsAsync(returnedParticipant);
 
         // when
-        Channel actualChannel =
-            await this.twilioCallProvider.ConnectAgentToQueueAsync(someBridgeId, someAgentExtension);
+        Channel actualChannel = await this.twilioCallProvider.ConnectAgentToQueueAsync(
+            someBridgeId, someCustomerChannelId, someAgentExtension);
 
         // then
         actualChannel.Should().BeEquivalentTo(expectedChannel);

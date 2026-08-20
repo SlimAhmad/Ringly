@@ -14,6 +14,7 @@ public partial class AsteriskCallFoundationServiceTests
         // given
         string someBridgeId = GetRandomString();
         string someAgentExtension = GetRandomString();
+        string someCustomerChannelId = GetRandomString();
         var httpResponseBadRequestException = new HttpResponseBadRequestException();
         var invalidCallParticipantException = new InvalidCallParticipantException();
 
@@ -26,7 +27,7 @@ public partial class AsteriskCallFoundationServiceTests
 
         // when
         ValueTask<Channel> connectTask =
-            this.callFoundationService.ConnectAgentToQueueAsync(someBridgeId, someAgentExtension);
+            this.callFoundationService.ConnectAgentToQueueAsync(someBridgeId, someCustomerChannelId, someAgentExtension);
 
         CallSessionDependencyValidationException actualException =
             await Assert.ThrowsAsync<CallSessionDependencyValidationException>(connectTask.AsTask);
@@ -56,6 +57,7 @@ public partial class AsteriskCallFoundationServiceTests
         // given
         string someBridgeId = GetRandomString();
         string someAgentExtension = GetRandomString();
+        string someCustomerChannelId = GetRandomString();
 
         var failedAsteriskCallProviderDependencyException =
             new FailedAsteriskCallProviderDependencyException(dependencyException);
@@ -69,7 +71,7 @@ public partial class AsteriskCallFoundationServiceTests
 
         // when
         ValueTask<Channel> connectTask =
-            this.callFoundationService.ConnectAgentToQueueAsync(someBridgeId, someAgentExtension);
+            this.callFoundationService.ConnectAgentToQueueAsync(someBridgeId, someCustomerChannelId, someAgentExtension);
 
         CallProviderDependencyException actualException =
             await Assert.ThrowsAsync<CallProviderDependencyException>(connectTask.AsTask);
@@ -99,6 +101,7 @@ public partial class AsteriskCallFoundationServiceTests
         // given
         string someBridgeId = GetRandomString();
         string someAgentExtension = GetRandomString();
+        string someCustomerChannelId = GetRandomString();
 
         var failedAsteriskCallProviderDependencyException =
             new FailedAsteriskCallProviderDependencyException(dependencyException);
@@ -112,7 +115,7 @@ public partial class AsteriskCallFoundationServiceTests
 
         // when
         ValueTask<Channel> connectTask =
-            this.callFoundationService.ConnectAgentToQueueAsync(someBridgeId, someAgentExtension);
+            this.callFoundationService.ConnectAgentToQueueAsync(someBridgeId, someCustomerChannelId, someAgentExtension);
 
         CallProviderDependencyException actualException =
             await Assert.ThrowsAsync<CallProviderDependencyException>(connectTask.AsTask);
@@ -140,6 +143,7 @@ public partial class AsteriskCallFoundationServiceTests
         // given
         string someBridgeId = GetRandomString();
         string someAgentExtension = GetRandomString();
+        string someCustomerChannelId = GetRandomString();
         var exception = new Exception();
         var failedCallProviderServiceException = new FailedCallProviderServiceException(exception);
 
@@ -152,7 +156,7 @@ public partial class AsteriskCallFoundationServiceTests
 
         // when
         ValueTask<Channel> connectTask =
-            this.callFoundationService.ConnectAgentToQueueAsync(someBridgeId, someAgentExtension);
+            this.callFoundationService.ConnectAgentToQueueAsync(someBridgeId, someCustomerChannelId, someAgentExtension);
 
         CallProviderServiceException actualException =
             await Assert.ThrowsAsync<CallProviderServiceException>(connectTask.AsTask);

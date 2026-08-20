@@ -13,23 +13,29 @@ public partial class AsteriskCallFoundationServiceTests
     {
         // given
         string someBridgeId = GetRandomString();
+        string someCustomerChannelId = GetRandomString();
         string someAgentExtension = GetRandomString();
-        Channel someChannel = CreateRandomChannel();
+        Channel someAgentChannel = CreateRandomChannel();
+        Bridge someTalkBridge = CreateRandomBridge();
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.InsertChannelAsync($"PJSIP/{someAgentExtension}"))
-                .ReturnsAsync(someChannel);
+                .ReturnsAsync(someAgentChannel);
 
         this.asteriskBrokerMock.Setup(broker =>
             broker.StreamStasisStartEvents())
-                .Returns(new[] { new StasisStartEvent { ChannelId = someChannel.ChannelId } }.ToObservable());
+                .Returns(new[] { new StasisStartEvent { ChannelId = someAgentChannel.ChannelId } }.ToObservable());
+
+        this.asteriskBrokerMock.Setup(broker =>
+            broker.InsertBridgeAsync("mixing"))
+                .ReturnsAsync(someTalkBridge);
 
         // when
-        Channel actualChannel =
-            await this.callFoundationService.ConnectAgentToQueueAsync(someBridgeId, someAgentExtension);
+        Channel actualChannel = await this.callFoundationService.ConnectAgentToQueueAsync(
+            someBridgeId, someCustomerChannelId, someAgentExtension);
 
         // then
-        actualChannel.Should().BeEquivalentTo(someChannel);
+        actualChannel.Should().BeEquivalentTo(someAgentChannel);
 
         this.asteriskBrokerMock.Verify(broker =>
             broker.InsertChannelAsync($"PJSIP/{someAgentExtension}"),
@@ -40,7 +46,19 @@ public partial class AsteriskCallFoundationServiceTests
                 Times.Once);
 
         this.asteriskBrokerMock.Verify(broker =>
-            broker.AddChannelToBridgeAsync(someBridgeId, someChannel.ChannelId),
+            broker.InsertBridgeAsync("mixing"),
+                Times.Once);
+
+        this.asteriskBrokerMock.Verify(broker =>
+            broker.RemoveChannelFromBridgeAsync(someBridgeId, someCustomerChannelId),
+                Times.Once);
+
+        this.asteriskBrokerMock.Verify(broker =>
+            broker.AddChannelToBridgeAsync(someTalkBridge.Id, someCustomerChannelId),
+                Times.Once);
+
+        this.asteriskBrokerMock.Verify(broker =>
+            broker.AddChannelToBridgeAsync(someTalkBridge.Id, someAgentChannel.ChannelId),
                 Times.Once);
 
         this.asteriskBrokerMock.VerifyNoOtherCalls();

@@ -1,19 +1,22 @@
 using Ringly.Abstractions.Models;
+using Ringly.Asterisk.Models;
 
 namespace Ringly.Asterisk.Services.Foundations.CallSessions;
 
 public partial class AsteriskCallFoundationService
 {
-    // Bridges a claiming agent's own channel into an already-held customer's bridge — the
-    // counterpart to RouteToQueueAsync that actually connects the two sides once an agent claims
-    // a waiting customer. No name-based lookup step (unlike RouteToQueueAsync's IQueueRegistry
-    // lookup) — bridgeId comes from the RouteToQueueAsync call that put the customer there, so an
-    // unknown/expired bridgeId surfaces naturally as a dependency (validation) exception from
-    // AddChannelToBridgeAsync itself, already mapped by TryCatchChannel's own catch ladder.
-    public ValueTask<Channel> ConnectAgentToQueueAsync(string bridgeId, string agentExtension) =>
+    // Bridges a claiming agent's own channel with an already-held customer — the counterpart to
+    // RouteToQueueAsync that actually connects the two sides once an agent claims a waiting
+    // customer. No name-based lookup step (unlike RouteToQueueAsync's IQueueRegistry lookup) —
+    // bridgeId/customerChannelId come from the RouteToQueueAsync call that put the customer
+    // there, so an unknown/expired bridgeId surfaces naturally as a dependency (validation)
+    // exception from AddChannelToBridgeAsync/RemoveChannelFromBridgeAsync themselves, already
+    // mapped by TryCatchChannel's own catch ladder.
+    public ValueTask<Channel> ConnectAgentToQueueAsync(
+        string bridgeId, string customerChannelId, string agentExtension) =>
     TryCatchChannel(async () =>
     {
-        ValidateConnectAgentToQueueRequest(bridgeId, agentExtension);
+        ValidateConnectAgentToQueueRequest(bridgeId, customerChannelId, agentExtension);
 
         Channel agentChannel = await this.asteriskBroker.InsertChannelAsync($"PJSIP/{agentExtension}");
 
@@ -21,7 +24,16 @@ public partial class AsteriskCallFoundationService
         // until it actually enters the Stasis app.
         await WaitForStasisStartAsync(this.asteriskBroker, agentChannel.ChannelId);
 
-        await this.asteriskBroker.AddChannelToBridgeAsync(bridgeId, agentChannel.ChannelId);
+        // A queue's bridge (RouteToQueueAsync/CreateQueueAsync) is Asterisk's "holding" bridge
+        // type, built for a customer to wait with music-on-hold — confirmed live it does NOT mix
+        // two-way audio between participants the way StartCallSessionAsync's "mixing" bridge does
+        // (agent + customer both showed "connected" with zero audio flowing either direction).
+        // Moving the customer into a fresh mixing bridge alongside the agent, rather than just
+        // adding the agent to the existing holding bridge, is what actually lets them talk.
+        Bridge talkBridge = await this.asteriskBroker.InsertBridgeAsync(MixingBridgeType);
+        await this.asteriskBroker.RemoveChannelFromBridgeAsync(bridgeId, customerChannelId);
+        await this.asteriskBroker.AddChannelToBridgeAsync(talkBridge.Id, customerChannelId);
+        await this.asteriskBroker.AddChannelToBridgeAsync(talkBridge.Id, agentChannel.ChannelId);
 
         return agentChannel;
     });
