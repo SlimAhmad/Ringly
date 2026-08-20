@@ -15,6 +15,7 @@ public partial class TwilioCallProviderTests
         // given
         string someBridgeId = GetRandomString();
         string someAgentExtension = GetRandomString();
+        string someCustomerChannelId = GetRandomString();
         var httpResponseBadRequestException = new HttpResponseBadRequestException();
         var invalidCallParticipantException = new InvalidCallParticipantException();
 
@@ -27,7 +28,7 @@ public partial class TwilioCallProviderTests
 
         // when
         ValueTask<Channel> connectTask =
-            this.twilioCallProvider.ConnectAgentToQueueAsync(someBridgeId, someAgentExtension);
+            this.twilioCallProvider.ConnectAgentToQueueAsync(someBridgeId, someCustomerChannelId, someAgentExtension);
 
         CallSessionDependencyValidationException actualException =
             await Assert.ThrowsAsync<CallSessionDependencyValidationException>(connectTask.AsTask);
@@ -54,6 +55,7 @@ public partial class TwilioCallProviderTests
         // given
         string someBridgeId = GetRandomString();
         string someAgentExtension = GetRandomString();
+        string someCustomerChannelId = GetRandomString();
         var httpResponseUnauthorizedException = new HttpResponseUnauthorizedException();
 
         var failedTwilioCallProviderDependencyException =
@@ -68,7 +70,7 @@ public partial class TwilioCallProviderTests
 
         // when
         ValueTask<Channel> connectTask =
-            this.twilioCallProvider.ConnectAgentToQueueAsync(someBridgeId, someAgentExtension);
+            this.twilioCallProvider.ConnectAgentToQueueAsync(someBridgeId, someCustomerChannelId, someAgentExtension);
 
         CallProviderDependencyException actualException =
             await Assert.ThrowsAsync<CallProviderDependencyException>(connectTask.AsTask);
@@ -95,6 +97,7 @@ public partial class TwilioCallProviderTests
         // given
         string someBridgeId = GetRandomString();
         string someAgentExtension = GetRandomString();
+        string someCustomerChannelId = GetRandomString();
         var exception = new Exception();
         var failedCallProviderServiceException = new FailedCallProviderServiceException(exception);
 
@@ -107,7 +110,7 @@ public partial class TwilioCallProviderTests
 
         // when
         ValueTask<Channel> connectTask =
-            this.twilioCallProvider.ConnectAgentToQueueAsync(someBridgeId, someAgentExtension);
+            this.twilioCallProvider.ConnectAgentToQueueAsync(someBridgeId, someCustomerChannelId, someAgentExtension);
 
         CallProviderServiceException actualException =
             await Assert.ThrowsAsync<CallProviderServiceException>(connectTask.AsTask);

@@ -15,15 +15,18 @@ public class AgentsController : RESTFulController
     private readonly ICallCenterProvider callCenterProvider;
     private readonly ICallProvider callProvider;
     private readonly SupportQueueBroadcastRegistry supportQueueBroadcastRegistry;
+    private readonly RideHailingCallRouter rideHailingCallRouter;
 
     public AgentsController(
         ICallCenterProvider callCenterProvider,
         ICallProvider callProvider,
-        SupportQueueBroadcastRegistry supportQueueBroadcastRegistry)
+        SupportQueueBroadcastRegistry supportQueueBroadcastRegistry,
+        RideHailingCallRouter rideHailingCallRouter)
     {
         this.callCenterProvider = callCenterProvider;
         this.callProvider = callProvider;
         this.supportQueueBroadcastRegistry = supportQueueBroadcastRegistry;
+        this.rideHailingCallRouter = rideHailingCallRouter;
     }
 
     [HttpPost("{agentAppName}/availability")]
@@ -76,7 +79,14 @@ public class AgentsController : RESTFulController
 
         try
         {
-            await this.callProvider.ConnectAgentToQueueAsync(bridgeId!, agentAppName);
+            Channel agentChannel =
+                await this.callProvider.ConnectAgentToQueueAsync(bridgeId!, channelId, agentAppName);
+
+            // Confirmed live as a real gap: without this, hanging up on either side left the
+            // other side's channel connected indefinitely — nothing was watching for one leg to
+            // end and hang up the other, unlike RideHailingCallRouter's own directly-dialed
+            // calls. Reuses that router's existing hangup-cascade watch instead of duplicating it.
+            this.rideHailingCallRouter.RegisterPeerChannels(channelId, agentChannel.ChannelId);
 
             return this.Ok(value: new ClaimResult { Claimed = true, ChannelId = channelId });
         }

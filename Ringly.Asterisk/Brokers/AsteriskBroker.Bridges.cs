@@ -13,4 +13,9 @@ public partial class AsteriskBroker
         await this.PostAsync(
             $"{BridgesRelativeUrl}/{Uri.EscapeDataString(bridgeId)}/addChannel" +
             $"?channel={Uri.EscapeDataString(channelId)}");
+
+    public async ValueTask RemoveChannelFromBridgeAsync(string bridgeId, string channelId) =>
+        await this.PostAsync(
+            $"{BridgesRelativeUrl}/{Uri.EscapeDataString(bridgeId)}/removeChannel" +
+            $"?channel={Uri.EscapeDataString(channelId)}");
 }

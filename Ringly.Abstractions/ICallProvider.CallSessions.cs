@@ -12,8 +12,9 @@ public partial interface ICallProvider
     ValueTask<CallSession> RouteToQueueAsync(Guid customerId, string queueName);
 
     // Bridges a claiming agent's own channel into an already-held customer's bridge/conference
-    // (bridgeId is CallSession.BridgeId from the RouteToQueueAsync call that put the customer
-    // there) — the counterpart that actually connects the two sides once an agent claims a
-    // waiting customer, rather than leaving them on hold indefinitely.
-    ValueTask<Channel> ConnectAgentToQueueAsync(string bridgeId, string agentExtension);
+    // (bridgeId is CallSession.BridgeId, customerChannelId is CallSession.CustomerChannelId, both
+    // from the RouteToQueueAsync call that put the customer there) — the counterpart that
+    // actually connects the two sides once an agent claims a waiting customer, rather than
+    // leaving them on hold indefinitely.
+    ValueTask<Channel> ConnectAgentToQueueAsync(string bridgeId, string customerChannelId, string agentExtension);
 }

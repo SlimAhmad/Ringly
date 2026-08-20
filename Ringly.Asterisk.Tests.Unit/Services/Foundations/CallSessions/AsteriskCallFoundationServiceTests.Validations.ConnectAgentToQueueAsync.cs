@@ -15,6 +15,7 @@ public partial class AsteriskCallFoundationServiceTests
         string? invalidBridgeId)
     {
         // given
+        string someCustomerChannelId = GetRandomString();
         string someAgentExtension = GetRandomString();
 
         var invalidConnectAgentToQueueRequestException = new InvalidConnectAgentToQueueRequestException();
@@ -27,8 +28,48 @@ public partial class AsteriskCallFoundationServiceTests
             new CallSessionValidationException(invalidConnectAgentToQueueRequestException);
 
         // when
-        ValueTask<Channel> connectTask =
-            this.callFoundationService.ConnectAgentToQueueAsync(invalidBridgeId!, someAgentExtension);
+        ValueTask<Channel> connectTask = this.callFoundationService.ConnectAgentToQueueAsync(
+            invalidBridgeId!, someCustomerChannelId, someAgentExtension);
+
+        CallSessionValidationException actualException =
+            await Assert.ThrowsAsync<CallSessionValidationException>(connectTask.AsTask);
+
+        // then
+        actualException.Should().BeEquivalentTo(expectedValidationException);
+
+        this.loggingBrokerMock.Verify(broker =>
+            broker.LogErrorAsync(It.Is(SameExceptionAs(expectedValidationException))),
+                Times.Once);
+
+        this.asteriskBrokerMock.VerifyNoOtherCalls();
+        this.sipCredentialsStoreMock.VerifyNoOtherCalls();
+        this.queueRegistryMock.VerifyNoOtherCalls();
+        this.loggingBrokerMock.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task ShouldThrowValidationExceptionOnConnectAgentToQueueIfCustomerChannelIdIsInvalidAndLogItAsync(
+        string? invalidCustomerChannelId)
+    {
+        // given
+        string someBridgeId = GetRandomString();
+        string someAgentExtension = GetRandomString();
+
+        var invalidConnectAgentToQueueRequestException = new InvalidConnectAgentToQueueRequestException();
+
+        invalidConnectAgentToQueueRequestException.UpsertDataList(
+            key: "customerChannelId",
+            value: "Value is required");
+
+        var expectedValidationException =
+            new CallSessionValidationException(invalidConnectAgentToQueueRequestException);
+
+        // when
+        ValueTask<Channel> connectTask = this.callFoundationService.ConnectAgentToQueueAsync(
+            someBridgeId, invalidCustomerChannelId!, someAgentExtension);
 
         CallSessionValidationException actualException =
             await Assert.ThrowsAsync<CallSessionValidationException>(connectTask.AsTask);
@@ -55,6 +96,7 @@ public partial class AsteriskCallFoundationServiceTests
     {
         // given
         string someBridgeId = GetRandomString();
+        string someCustomerChannelId = GetRandomString();
 
         var invalidConnectAgentToQueueRequestException = new InvalidConnectAgentToQueueRequestException();
 
@@ -66,8 +108,8 @@ public partial class AsteriskCallFoundationServiceTests
             new CallSessionValidationException(invalidConnectAgentToQueueRequestException);
 
         // when
-        ValueTask<Channel> connectTask =
-            this.callFoundationService.ConnectAgentToQueueAsync(someBridgeId, invalidAgentExtension!);
+        ValueTask<Channel> connectTask = this.callFoundationService.ConnectAgentToQueueAsync(
+            someBridgeId, someCustomerChannelId, invalidAgentExtension!);
 
         CallSessionValidationException actualException =
             await Assert.ThrowsAsync<CallSessionValidationException>(connectTask.AsTask);
