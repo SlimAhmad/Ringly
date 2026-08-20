@@ -88,7 +88,7 @@ public class AgentsController : RESTFulController
             // calls. Reuses that router's existing hangup-cascade watch instead of duplicating it.
             this.rideHailingCallRouter.RegisterPeerChannels(channelId, agentChannel.ChannelId);
 
-            return this.Ok(value: new ClaimResult { Claimed = true, ChannelId = channelId });
+            return this.Ok(value: new ClaimResult { Claimed = true, ChannelId = channelId, BridgeId = bridgeId! });
         }
         // Every branch below releases the claim — confirmed live as a real bug: a failed
         // ConnectAgentToQueueAsync (e.g. the agent's own device never answers within its 30s

@@ -7,7 +7,7 @@ namespace Ringly.Samples.BlazorHybrid.Brokers.Apis;
 public interface IAgentConsoleApiBroker
 {
     ValueTask PostAvailabilityAsync(string agentAppName, bool isAvailable);
-    ValueTask PostClaimAsync(string agentAppName, string channelId);
+    ValueTask<ClaimResult> PostClaimAsync(string agentAppName, string channelId);
 
     // Not a ValueTask<T> — this is a genuinely long-lived stream (the-standard-architecture's
     // asynchronization-abstraction rule is about uniform async *return shape* for request/response

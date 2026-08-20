@@ -90,6 +90,13 @@ npm run watch:css   # watches for changes while developing
    registered device (the same one from step 1's Register panel) — answer it
    to actually talk to the customer. Full details:
    [WebApi README](../Ringly.Samples.WebApi/README.md#customer-support-walkthrough).
+5. **Departments**: register/list/remove queues from the UI instead of a raw
+   `curl` call — the same queue names step 3's "Request support" flow uses.
+6. **Recordings**: once you've claimed a call in step 4, this panel shows the
+   active bridge automatically (no bridge ID to type) — start a recording, stop
+   it, and it uploads to blob storage (Azurite locally by default; see the
+   WebApi README's own Recordings section). Requires `docker compose up -d
+   azurite` running alongside the rest of the stack.
 
 Recording controls during an active claimed call are not wired into this UI
 yet — see the `AgentsController`/`RecordingsController` HTTP endpoints in

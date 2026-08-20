@@ -34,6 +34,8 @@
     <ProjectReference Include="..\..\Ringly.Asterisk\Ringly.Asterisk.csproj" />
     <ProjectReference Include="..\..\Ringly.CallCenter.Abstractions\Ringly.CallCenter.Abstractions.csproj" />
     <ProjectReference Include="..\..\Ringly.CallCenter.Asterisk\Ringly.CallCenter.Asterisk.csproj" />
+    <ProjectReference Include="..\..\Ringly.Storage.Abstractions\Ringly.Storage.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Ringly.Storage.AzureBlob\Ringly.Storage.AzureBlob.csproj" />
   </ItemGroup>
 
 </Project>

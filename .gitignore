@@ -427,3 +427,9 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Asterisk's recording spool, bind-mounted into the container for
+# Ringly.Samples.WebApi to read locally (see docker/docker-compose.yml) — real
+# recorded audio, not source.
+docker/asterisk-recordings/*
+!docker/asterisk-recordings/.gitkeep

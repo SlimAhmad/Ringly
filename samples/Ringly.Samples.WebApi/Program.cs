@@ -8,10 +8,13 @@ using Ringly.CallCenter.Abstractions;
 using Ringly.CallCenter.Asterisk.Services.Foundations.Queues;
 using Ringly.Samples.WebApi;
 using Ringly.Samples.WebApi.Brokers.Storages;
+using Ringly.Samples.WebApi.Services.Foundations.Recordings;
 using Ringly.Samples.WebApi.Services.Foundations.SupportQueues;
 using Ringly.Samples.WebApi.Services.Foundations.TelephonyCalls;
 using Ringly.Samples.WebApi.Services.Foundations.TelephonyDevices;
 using Ringly.Samples.WebApi.Services.Foundations.TelephonyIdentities;
+using Ringly.Storage.Abstractions;
+using Ringly.Storage.AzureBlob.Services.Foundations.RecordingStorage;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -40,6 +43,26 @@ builder.Services.AddScoped<ISipCredentialsStore, SqlSipCredentialsStore>();
 // survive a WebApi restart instead of vanishing with the in-memory registry.
 builder.Services.AddScoped<IQueueRegistry, SqlQueueRegistry>();
 builder.Services.AddScoped<ISupportQueueService, SupportQueueService>();
+builder.Services.AddScoped<IRecordingService, RecordingService>();
+
+// Ringly.Storage.AzureBlob (see its own README/comments) — real Azure.Storage.Blobs-backed
+// upload/download/delete/SAS-URL for a finished recording file. Points at Azurite (docker-compose)
+// by default for local dev, see appsettings.json's AzureBlob section's own comment. Fully
+// qualified below (not `using`'d) since Ringly.Storage.AzureBlob.Brokers.ILoggingBroker would
+// otherwise collide with Ringly.Asterisk.Brokers.ILoggingBroker, already in scope from the
+// `using Ringly.Asterisk.Brokers;` above.
+builder.Services.Configure<Ringly.Storage.AzureBlob.Brokers.AzureBlobOptions>(
+    builder.Configuration.GetSection("AzureBlob"));
+
+builder.Services.Configure<RecordingSpoolOptions>(builder.Configuration.GetSection("RecordingSpool"));
+
+builder.Services.AddSingleton<
+    Ringly.Storage.AzureBlob.Brokers.ILoggingBroker, Ringly.Storage.AzureBlob.Brokers.LoggingBroker>();
+
+builder.Services.AddSingleton<
+    Ringly.Storage.AzureBlob.Brokers.IAzureBlobBroker, Ringly.Storage.AzureBlob.Brokers.AzureBlobBroker>();
+
+builder.Services.AddSingleton<IRecordingStorageProvider, AzureBlobRecordingStorageProvider>();
 
 // Ties SupportController's real customer-routing flow to AgentsController's broadcast/claim
 // endpoints — see SupportQueueBroadcastRegistry's own comment for the full rationale.
@@ -87,6 +110,16 @@ using (IServiceScope migrationScope = app.Services.CreateScope())
         migrationScope.ServiceProvider.GetRequiredService<IStorageBroker>();
 
     storageBroker.Database.Migrate();
+}
+
+// The blob container isn't created automatically the first time a recording is uploaded — an
+// upload against a missing container just 404s. Created once here at startup instead.
+using (IServiceScope blobScope = app.Services.CreateScope())
+{
+    var azureBlobBroker = blobScope.ServiceProvider
+        .GetRequiredService<Ringly.Storage.AzureBlob.Brokers.IAzureBlobBroker>();
+
+    await azureBlobBroker.EnsureContainerExistsAsync();
 }
 
 if (app.Environment.IsDevelopment())

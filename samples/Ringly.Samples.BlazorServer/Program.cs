@@ -7,6 +7,7 @@ using Ringly.Samples.BlazorServer.Video;
 using Ringly.Samples.BlazorServer.ViewServices.Agents;
 using Ringly.Samples.BlazorServer.ViewServices.Calls;
 using Ringly.Samples.BlazorServer.ViewServices.Departments;
+using Ringly.Samples.BlazorServer.ViewServices.Recordings;
 using Ringly.Samples.BlazorServer.ViewServices.Support;
 using SIPSorceryMedia.Windows;
 using Vpx.Net;
@@ -62,6 +63,9 @@ builder.Services.AddSingleton<ISupportViewService, SupportViewService>();
 
 builder.Services.AddSingleton<IQueueApiBroker, QueueApiBroker>();
 builder.Services.AddSingleton<IDepartmentsViewService, DepartmentsViewService>();
+
+builder.Services.AddSingleton<IRecordingApiBroker, RecordingApiBroker>();
+builder.Services.AddSingleton<IRecordingViewService, RecordingViewService>();
 
 // Part 8c: agent console — availability toggle + live broadcast list, calling
 // Ringly.Samples.WebApi's AgentsController.

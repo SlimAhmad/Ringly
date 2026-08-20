@@ -7,6 +7,6 @@ namespace Ringly.Samples.BlazorServer.Brokers.Apis;
 public interface IAgentConsoleApiBroker
 {
     ValueTask PostAvailabilityAsync(string agentAppName, bool isAvailable);
-    ValueTask PostClaimAsync(string agentAppName, string channelId);
+    ValueTask<ClaimResult> PostClaimAsync(string agentAppName, string channelId);
     IAsyncEnumerable<AgentBroadcastInfo> StreamBroadcastsAsync(CancellationToken cancellationToken);
 }

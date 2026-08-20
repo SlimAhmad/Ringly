@@ -52,8 +52,8 @@ public class AgentConsoleApiBroker : IAgentConsoleApiBroker
             content: new { isAvailable },
             mediaType: "application/json");
 
-    public async ValueTask PostClaimAsync(string agentAppName, string channelId) =>
-        await this.apiClient.PostContentAsync<object, object>(
+    public async ValueTask<ClaimResult> PostClaimAsync(string agentAppName, string channelId) =>
+        await this.apiClient.PostContentAsync<object, ClaimResult>(
             relativeUrl: $"api/agents/{agentAppName}/claim/{channelId}",
             content: new { },
             mediaType: "application/json");

@@ -52,4 +52,7 @@ public class AzureBlobBroker : IAzureBlobBroker
 
         return ValueTask.FromResult(sasUri);
     }
+
+    public async ValueTask EnsureContainerExistsAsync() =>
+        await this.containerClient.CreateIfNotExistsAsync();
 }
