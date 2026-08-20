@@ -81,6 +81,19 @@ public class AgentsController : RESTFulController
         this.Response.Headers.ContentType = "text/event-stream";
         this.Response.Headers.CacheControl = "no-cache";
 
+        // Setting the headers above only stages them — Kestrel doesn't actually push a response
+        // onto the wire (not even the status line) until the body is flushed, which for this
+        // endpoint might not happen for a long time otherwise (StreamCallBroadcasts() only emits
+        // on a real incoming call). Confirmed live with instrumented timestamps and a client using
+        // HttpCompletionOption.ResponseHeadersRead (the exact semantics AgentConsoleApiBroker
+        // uses): StartAsync() alone returns in under a millisecond server-side, yet headers never
+        // reached the client — not even over loopback — until this explicit flush. Only once
+        // FlushAsync() is added do headers actually arrive (confirmed: ~110ms, previously 5s+
+        // timeouts). StartAsync() commits the response logically; FlushAsync() is what actually
+        // sends it.
+        await this.Response.StartAsync(cancellationToken);
+        await this.Response.Body.FlushAsync(cancellationToken);
+
         var completionSource = new TaskCompletionSource();
 
         using CancellationTokenRegistration registration =
