@@ -33,6 +33,10 @@ builder.Services.AddSingleton<IAsteriskBroker, AsteriskBroker>();
 builder.Services.AddScoped<ISipCredentialsStore, SqlSipCredentialsStore>();
 builder.Services.AddSingleton<IQueueRegistry, InMemoryQueueRegistry>();
 
+// Ties SupportController's real customer-routing flow to AgentsController's broadcast/claim
+// endpoints — see SupportQueueBroadcastRegistry's own comment for the full rationale.
+builder.Services.AddSingleton<SupportQueueBroadcastRegistry>();
+
 builder.Services.AddScoped<IAsteriskSipEndpointConfigFoundationService, AsteriskSipEndpointConfigFoundationService>();
 
 // StorageBroker owns a DbContext — Scoped, not Singleton (DbContext isn't thread-safe for

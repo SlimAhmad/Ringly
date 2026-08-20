@@ -96,6 +96,82 @@ public partial class AsteriskCallFoundationService
         }
     }
 
+    private delegate ValueTask<Channel> ReturningChannelFunction();
+
+    // Separate TryCatch overload (not the CallSession-returning one above) since
+    // ConnectAgentToQueueAsync returns Channel — same catch ladder and CreateAndLog* helpers,
+    // just one extra validation-exception catch for this routine's own request-shape check.
+    private async ValueTask<Channel> TryCatchChannel(ReturningChannelFunction returningChannelFunction)
+    {
+        try
+        {
+            return await returningChannelFunction();
+        }
+        catch (InvalidConnectAgentToQueueRequestException invalidConnectAgentToQueueRequestException)
+        {
+            throw await CreateAndLogValidationException(invalidConnectAgentToQueueRequestException);
+        }
+        catch (HttpResponseBadRequestException)
+        {
+            var invalidCallParticipantException = new InvalidCallParticipantException();
+            throw await CreateAndLogDependencyValidationException(invalidCallParticipantException);
+        }
+        catch (HttpResponseUnauthorizedException httpResponseUnauthorizedException)
+        {
+            var failedAsteriskCallProviderDependencyException =
+                new FailedAsteriskCallProviderDependencyException(httpResponseUnauthorizedException);
+
+            throw await CreateAndLogCriticalDependencyException(failedAsteriskCallProviderDependencyException);
+        }
+        catch (HttpResponseForbiddenException httpResponseForbiddenException)
+        {
+            var failedAsteriskCallProviderDependencyException =
+                new FailedAsteriskCallProviderDependencyException(httpResponseForbiddenException);
+
+            throw await CreateAndLogCriticalDependencyException(failedAsteriskCallProviderDependencyException);
+        }
+        catch (HttpResponseNotFoundException httpResponseNotFoundException)
+        {
+            var failedAsteriskCallProviderDependencyException =
+                new FailedAsteriskCallProviderDependencyException(httpResponseNotFoundException);
+
+            throw await CreateAndLogCriticalDependencyException(failedAsteriskCallProviderDependencyException);
+        }
+        catch (HttpRequestException httpRequestException)
+        {
+            var failedAsteriskCallProviderDependencyException =
+                new FailedAsteriskCallProviderDependencyException(httpRequestException);
+
+            throw await CreateAndLogCriticalDependencyException(failedAsteriskCallProviderDependencyException);
+        }
+        catch (HttpResponseInternalServerErrorException httpResponseInternalServerErrorException)
+        {
+            var failedAsteriskCallProviderDependencyException =
+                new FailedAsteriskCallProviderDependencyException(httpResponseInternalServerErrorException);
+
+            throw await CreateAndLogDependencyException(failedAsteriskCallProviderDependencyException);
+        }
+        catch (HttpResponseServiceUnavailableException httpResponseServiceUnavailableException)
+        {
+            var failedAsteriskCallProviderDependencyException =
+                new FailedAsteriskCallProviderDependencyException(httpResponseServiceUnavailableException);
+
+            throw await CreateAndLogDependencyException(failedAsteriskCallProviderDependencyException);
+        }
+        catch (HttpResponseException httpResponseException)
+        {
+            var failedAsteriskCallProviderDependencyException =
+                new FailedAsteriskCallProviderDependencyException(httpResponseException);
+
+            throw await CreateAndLogDependencyException(failedAsteriskCallProviderDependencyException);
+        }
+        catch (Exception exception)
+        {
+            var failedCallProviderServiceException = new FailedCallProviderServiceException(exception);
+            throw await CreateAndLogServiceException(failedCallProviderServiceException);
+        }
+    }
+
     private async ValueTask<CallSessionValidationException> CreateAndLogValidationException(Xeption exception)
     {
         var callSessionValidationException = new CallSessionValidationException(exception);

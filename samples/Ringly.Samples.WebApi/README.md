@@ -102,6 +102,51 @@ curl -X POST http://localhost:5000/api/queues \
 
 Swagger/OpenAPI is available at `/openapi/v1.json` in the Development environment.
 
+## Customer support walkthrough
+
+`POST /api/support/{clientId}/route` and the Agents endpoints above look like two
+separate feature areas, but they're actually one flow: a customer requesting
+support and an agent claiming them. Here's the real end-to-end sequence,
+against any of the Blazor sample apps' Call screen + Support panel + Agent
+Console (`Ringly.Samples.BlazorHybrid`/`Ringly.Samples.BlazorServer` — Maui has
+no Agent Console):
+
+1. Create a queue once (per queue name you intend to use):
+   `POST /api/queues { "name": "support" }`.
+2. **Customer**: open the app's Support panel, enter queue name `support`, tap
+   "Request support". This provisions a fresh SIP identity, registers it, and
+   routes it into the queue — but that means Asterisk originates a real call
+   *to the customer's own device* first. **The customer must answer that
+   incoming call** (easy to miss, since nothing else prompts for it) before
+   they're actually placed on hold in the queue.
+3. **Agent**: register under a known SIP extension via the Call screen's
+   "Register" panel (there's no auto-provisioning flow for agents the way
+   there is for customers — use one of the pre-seeded dev extensions, e.g.
+   `1001`). Then open Agent Console, set **"Agent app name" to that exact same
+   extension**, and toggle Available.
+
+   This convention — **`agentAppName` IS the agent's own SIP extension** —
+   isn't obvious from the UI (there's no separate extension field), but it's
+   required: claiming originates a real call to `PJSIP/{agentAppName}`, so the
+   agent's own device needs to actually be registered and listening on it.
+4. The agent's Agent Console shows the waiting customer via the broadcast
+   stream. Tapping claim wins the customer atomically (first agent to claim a
+   given call wins; a second attempt gets `409`) and rings a new incoming call
+   on the agent's own registered device — answer it to actually talk to the
+   customer.
+
+Under the hood this is `SupportQueueBroadcastRegistry` (`Program.cs`,
+`AddSingleton`), not `ICallCenterProvider.StreamCallBroadcasts()`/
+`ClaimCallAsync()` — those stay wired to Asterisk's own custom
+`/ari/events/claim` resource, which is only ever exercised by the
+`[broadcast_test]` dialplan context in
+`docker/asterisk/config/extensions.conf` (an internal claim-race smoke-test
+detail, unrelated to this walkthrough). `SupportController.PostRouteAsync`
+publishes into the registry once a customer is genuinely on hold;
+`AgentsController` reads from it for `GET /api/agents/broadcasts` and arbitrates
+`POST /api/agents/{agentAppName}/claim/{channelId}` atomically before calling
+`ICallProvider.ConnectAgentToQueueAsync` to actually bridge the agent in.
+
 ## Bridging client-dialed calls (`RideHailingCallRouter`)
 
 `/api/calls` only covers calls *this API* originates. A client dialing another

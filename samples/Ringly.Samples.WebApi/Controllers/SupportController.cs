@@ -16,9 +16,13 @@ namespace Ringly.Samples.WebApi.Controllers;
 public class SupportController : RESTFulController
 {
     private readonly ICallProvider callProvider;
+    private readonly SupportQueueBroadcastRegistry supportQueueBroadcastRegistry;
 
-    public SupportController(ICallProvider callProvider) =>
+    public SupportController(ICallProvider callProvider, SupportQueueBroadcastRegistry supportQueueBroadcastRegistry)
+    {
         this.callProvider = callProvider;
+        this.supportQueueBroadcastRegistry = supportQueueBroadcastRegistry;
+    }
 
     [HttpPost("{clientId:guid}/route")]
     public async ValueTask<ActionResult<CallSession>> PostRouteAsync(Guid clientId, [FromQuery] string queueName)
@@ -26,6 +30,13 @@ public class SupportController : RESTFulController
         try
         {
             CallSession session = await this.callProvider.RouteToQueueAsync(clientId, queueName);
+
+            // Publishes the now-waiting customer for AgentsController's broadcast stream — see
+            // SupportQueueBroadcastRegistry's own comment for why this doesn't go through
+            // ICallCenterProvider. A non-throwing dictionary write + Subject.OnNext, so it can't
+            // introduce a new failure mode into this method's own catch ladder below.
+            this.supportQueueBroadcastRegistry.PublishWaitingCustomer(
+                clientId, queueName, session.CustomerChannelId, session.BridgeId);
 
             return this.Created(value: session);
         }

@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
 using RESTFulSense.Controllers;
+using Ringly.Abstractions;
 using Ringly.Abstractions.Models;
 using Ringly.CallCenter.Abstractions;
 using Ringly.CallCenter.Asterisk.Models.Foundations.Agents.Exceptions;
+using Ringly.Asterisk.Models.Foundations.CallSessions.Exceptions;
 
 namespace Ringly.Samples.WebApi.Controllers;
 
@@ -11,9 +13,18 @@ namespace Ringly.Samples.WebApi.Controllers;
 public class AgentsController : RESTFulController
 {
     private readonly ICallCenterProvider callCenterProvider;
+    private readonly ICallProvider callProvider;
+    private readonly SupportQueueBroadcastRegistry supportQueueBroadcastRegistry;
 
-    public AgentsController(ICallCenterProvider callCenterProvider) =>
+    public AgentsController(
+        ICallCenterProvider callCenterProvider,
+        ICallProvider callProvider,
+        SupportQueueBroadcastRegistry supportQueueBroadcastRegistry)
+    {
         this.callCenterProvider = callCenterProvider;
+        this.callProvider = callProvider;
+        this.supportQueueBroadcastRegistry = supportQueueBroadcastRegistry;
+    }
 
     [HttpPost("{agentAppName}/availability")]
     public async ValueTask<ActionResult> PostAvailabilityAsync(
@@ -43,30 +54,47 @@ public class AgentsController : RESTFulController
         }
     }
 
+    // Claims a customer waiting via the real SupportController flow (see
+    // SupportQueueBroadcastRegistry's own comment for why this doesn't go through
+    // ICallCenterProvider.ClaimCallAsync) — arbitration is atomic in the registry, then the
+    // winning agent's own channel (agentAppName IS their SIP extension — see the WebApi README's
+    // customer-support walkthrough for this convention) is originated and bridged in.
     [HttpPost("{agentAppName}/claim/{channelId}")]
     public async ValueTask<ActionResult<ClaimResult>> PostClaimAsync(string agentAppName, string channelId)
     {
+        ClaimAttemptResult claimAttemptResult = this.supportQueueBroadcastRegistry.TryClaim(channelId, out string? bridgeId);
+
+        if (claimAttemptResult == ClaimAttemptResult.NotFound)
+        {
+            return this.NotFound();
+        }
+
+        if (claimAttemptResult == ClaimAttemptResult.AlreadyClaimed)
+        {
+            return this.Conflict();
+        }
+
         try
         {
-            ClaimResult claimResult = await this.callCenterProvider.ClaimCallAsync(channelId, agentAppName);
+            await this.callProvider.ConnectAgentToQueueAsync(bridgeId!, agentAppName);
 
-            return this.Ok(value: claimResult);
+            return this.Ok(value: new ClaimResult { Claimed = true, ChannelId = channelId });
         }
-        catch (AgentValidationException agentValidationException)
+        catch (CallSessionValidationException callSessionValidationException)
         {
-            return this.BadRequest(agentValidationException.InnerException);
+            return this.BadRequest(callSessionValidationException.InnerException);
         }
-        catch (AgentDependencyValidationException agentDependencyValidationException)
+        catch (CallSessionDependencyValidationException callSessionDependencyValidationException)
         {
-            return this.BadRequest(agentDependencyValidationException.InnerException);
+            return this.BadRequest(callSessionDependencyValidationException.InnerException);
         }
-        catch (AgentDependencyException agentDependencyException)
+        catch (CallProviderDependencyException callProviderDependencyException)
         {
-            return this.InternalServerError(agentDependencyException);
+            return this.InternalServerError(callProviderDependencyException);
         }
-        catch (AgentServiceException agentServiceException)
+        catch (CallProviderServiceException callProviderServiceException)
         {
-            return this.InternalServerError(agentServiceException);
+            return this.InternalServerError(callProviderServiceException);
         }
     }
 
@@ -99,7 +127,7 @@ public class AgentsController : RESTFulController
         using CancellationTokenRegistration registration =
             cancellationToken.Register(() => completionSource.TrySetResult());
 
-        using IDisposable subscription = this.callCenterProvider.StreamCallBroadcasts().Subscribe(
+        using IDisposable subscription = this.supportQueueBroadcastRegistry.StreamWaitingCustomers().Subscribe(
             onNext: broadcastEvent =>
             {
                 string json = System.Text.Json.JsonSerializer.Serialize(broadcastEvent);
