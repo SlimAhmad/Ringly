@@ -7,6 +7,7 @@ using Shiny;
 using Ringly.Client.Abstractions;
 using Ringly.Client.SipSorcery;
 using Ringly.Samples.BlazorHybrid.Brokers.Apis;
+using Ringly.Samples.BlazorHybrid.ViewServices.Agents;
 using Ringly.Samples.BlazorHybrid.ViewServices.Calls;
 using Ringly.Samples.BlazorHybrid.ViewServices.Support;
 using Ringly.Samples.Maui;
@@ -85,6 +86,9 @@ public static class MauiProgram
 
         builder.Services.AddSingleton<ISupportApiBroker, SupportApiBroker>();
         builder.Services.AddSingleton<ISupportViewService, SupportViewService>();
+
+        builder.Services.AddSingleton<IAgentConsoleApiBroker, AgentConsoleApiBroker>();
+        builder.Services.AddSingleton<IAgentConsoleViewService, AgentConsoleViewService>();
 
 #if WINDOWS
         // Real microphone/speaker access via the MAUI sample's CustomWindowsAudioEndPoint (linked

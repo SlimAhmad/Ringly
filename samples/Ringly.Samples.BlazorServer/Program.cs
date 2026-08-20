@@ -4,6 +4,7 @@ using Ringly.Samples.BlazorServer.Brokers.Apis;
 using Ringly.Samples.BlazorServer.Brokers.Audios;
 using Ringly.Samples.BlazorServer.Components;
 using Ringly.Samples.BlazorServer.Video;
+using Ringly.Samples.BlazorServer.ViewServices.Agents;
 using Ringly.Samples.BlazorServer.ViewServices.Calls;
 using Ringly.Samples.BlazorServer.ViewServices.Support;
 using SIPSorceryMedia.Windows;
@@ -57,6 +58,11 @@ builder.Services.AddSingleton<ICallViewService, CallViewService>();
 // ClientsController/SupportController — see ISupportApiBroker.cs's own comment.
 builder.Services.AddSingleton<ISupportApiBroker, SupportApiBroker>();
 builder.Services.AddSingleton<ISupportViewService, SupportViewService>();
+
+// Part 8c: agent console — availability toggle + live broadcast list, calling
+// Ringly.Samples.WebApi's AgentsController.
+builder.Services.AddSingleton<IAgentConsoleApiBroker, AgentConsoleApiBroker>();
+builder.Services.AddSingleton<IAgentConsoleViewService, AgentConsoleViewService>();
 
 var app = builder.Build();
 
