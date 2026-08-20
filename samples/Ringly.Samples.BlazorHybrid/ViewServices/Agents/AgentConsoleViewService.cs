@@ -5,6 +5,18 @@ namespace Ringly.Samples.BlazorHybrid.ViewServices.Agents;
 
 public sealed class AgentConsoleViewService : IAgentConsoleViewService
 {
+    // This view service is a Singleton (registered once for the app's whole lifetime), so
+    // InitializeAsync only ever runs once — a single unhandled failure in the stream (a dropped
+    // Wi-Fi connection, the WebApi restarting, a DNS blip) used to end ListenForBroadcastsAsync
+    // permanently, leaving "Broadcast stream disconnected" on screen forever with no way to
+    // recover short of force-closing the whole app. Confirmed live this session: multiple Wi-Fi
+    // network switches left the console stuck on a stale disconnect message even after the
+    // underlying connectivity (and a separate server-side header-flush bug, see WebApi issue #268)
+    // were both fixed — the loop had simply already given up. Retrying with backoff instead means
+    // a transient failure recovers on its own instead of requiring a full app relaunch.
+    private static readonly TimeSpan InitialRetryDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(30);
+
     private readonly IAgentConsoleApiBroker agentConsoleApiBroker;
     private readonly List<AgentBroadcastInfo> broadcasts = [];
     private readonly CancellationTokenSource listenCancellationSource = new();
@@ -32,24 +44,50 @@ public sealed class AgentConsoleViewService : IAgentConsoleViewService
 
     private async Task ListenForBroadcastsAsync(CancellationToken cancellationToken)
     {
-        try
+        TimeSpan retryDelay = InitialRetryDelay;
+
+        while (!cancellationToken.IsCancellationRequested)
         {
-            await foreach (AgentBroadcastInfo broadcast in
-                this.agentConsoleApiBroker.StreamBroadcastsAsync(cancellationToken))
+            try
             {
-                this.broadcasts.Insert(0, broadcast);
+                this.StatusMessage = "Listening for broadcasts.";
+                this.StatusMessageColorClass = "text-emerald-400";
+                this.OnStateChanged();
+
+                await foreach (AgentBroadcastInfo broadcast in
+                    this.agentConsoleApiBroker.StreamBroadcastsAsync(cancellationToken))
+                {
+                    this.broadcasts.Insert(0, broadcast);
+                    this.OnStateChanged();
+                }
+
+                // The stream ended without an exception (e.g. the server completed it) — still
+                // worth retrying rather than going quiet forever, same reasoning as the catch
+                // block below.
+                retryDelay = InitialRetryDelay;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Expected on Dispose — the console isn't in use anymore, nothing to report.
+                return;
+            }
+            catch (Exception exception)
+            {
+                this.StatusMessage = $"Broadcast stream disconnected: {exception.Message} — retrying in {retryDelay.TotalSeconds:0}s.";
+                this.StatusMessageColorClass = "text-red-400";
                 this.OnStateChanged();
             }
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected on Dispose — the console isn't in use anymore, nothing to report.
-        }
-        catch (Exception exception)
-        {
-            this.StatusMessage = $"Broadcast stream disconnected: {exception.Message}";
-            this.StatusMessageColorClass = "text-red-400";
-            this.OnStateChanged();
+
+            try
+            {
+                await Task.Delay(retryDelay, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            retryDelay = TimeSpan.FromSeconds(Math.Min(retryDelay.TotalSeconds * 2, MaxRetryDelay.TotalSeconds));
         }
     }
 
