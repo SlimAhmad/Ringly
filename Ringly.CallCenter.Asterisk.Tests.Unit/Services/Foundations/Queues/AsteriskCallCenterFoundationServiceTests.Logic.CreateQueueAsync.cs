@@ -35,11 +35,52 @@ public partial class AsteriskCallCenterFoundationServiceTests
             broker.InsertBridgeAsync("holding"),
                 Times.Once);
 
+        this.asteriskBrokerMock.Verify(broker =>
+            broker.StartMusicOnHoldAsync(returnedBridge.Id, inputQueueConfig.MusicOnHoldClass),
+                Times.Once);
+
         this.queueRegistryMock.Verify(registry =>
             registry.RegisterAsync(It.Is<HoldingBridge>(holdingBridge =>
                 holdingBridge.BridgeId == expectedHoldingBridge.BridgeId &&
                 holdingBridge.QueueName == expectedHoldingBridge.QueueName)),
                     Times.Once);
+
+        this.asteriskBrokerMock.VerifyNoOtherCalls();
+        this.queueRegistryMock.VerifyNoOtherCalls();
+        this.loggingBrokerMock.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task ShouldCreateQueueWithDefaultMusicOnHoldClassIfNotSpecifiedAsync(
+        string? unspecifiedMusicOnHoldClass)
+    {
+        // given
+        QueueConfig inputQueueConfig = CreateRandomQueueConfig();
+        inputQueueConfig.MusicOnHoldClass = unspecifiedMusicOnHoldClass!;
+        Bridge returnedBridge = CreateRandomBridge();
+
+        this.asteriskBrokerMock.Setup(broker =>
+            broker.InsertBridgeAsync("holding"))
+                .ReturnsAsync(returnedBridge);
+
+        // when
+        await this.asteriskCallCenterFoundationService.CreateQueueAsync(inputQueueConfig);
+
+        // then
+        this.asteriskBrokerMock.Verify(broker =>
+            broker.StartMusicOnHoldAsync(returnedBridge.Id, "default"),
+                Times.Once);
+
+        this.asteriskBrokerMock.Verify(broker =>
+            broker.InsertBridgeAsync("holding"),
+                Times.Once);
+
+        this.queueRegistryMock.Verify(registry =>
+            registry.RegisterAsync(It.IsAny<HoldingBridge>()),
+                Times.Once);
 
         this.asteriskBrokerMock.VerifyNoOtherCalls();
         this.queueRegistryMock.VerifyNoOtherCalls();

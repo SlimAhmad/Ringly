@@ -8,6 +8,7 @@ namespace Ringly.CallCenter.Asterisk.Services.Foundations.Queues;
 public partial class AsteriskCallCenterFoundationService : ICallCenterProvider
 {
     private const string HoldingBridgeType = "holding";
+    private const string DefaultMusicOnHoldClass = "default";
 
     private readonly IAsteriskBroker asteriskBroker;
     private readonly IQueueRegistry queueRegistry;
@@ -29,6 +30,18 @@ public partial class AsteriskCallCenterFoundationService : ICallCenterProvider
         ValidateQueueConfig(config);
 
         Bridge bridge = await this.asteriskBroker.InsertBridgeAsync(HoldingBridgeType);
+
+        // Starting MOH on a holding bridge plays it to every current AND future member
+        // automatically (Asterisk's own documented holding-bridge behavior) — confirmed live as a
+        // real gap otherwise: config.MusicOnHoldClass previously went nowhere, so a customer
+        // routed into a queue via RouteToQueueAsync just waited in silence. Falls back to
+        // Asterisk's own "default" class name when the caller doesn't specify one, rather than
+        // silently starting no MOH at all.
+        string mohClass = string.IsNullOrWhiteSpace(config.MusicOnHoldClass)
+            ? DefaultMusicOnHoldClass
+            : config.MusicOnHoldClass;
+
+        await this.asteriskBroker.StartMusicOnHoldAsync(bridge.Id, mohClass);
 
         var holdingBridge = new HoldingBridge
         {
