@@ -93,7 +93,9 @@ can't host a native MAUI control inline; Android's capture is headless
 URI in the page instead, same as the remote video on both platforms.
 
 **Support/agent console**: same flow as `Ringly.Samples.BlazorServer`'s own
-README describes — see that for the walkthrough, identical on this sample.
+README describes — see that for the full walkthrough (including the
+`agentAppName` == SIP extension convention), identical on this sample. Full
+technical details: [WebApi README](../Ringly.Samples.WebApi/README.md#customer-support-walkthrough).
 
 ## Verified
 

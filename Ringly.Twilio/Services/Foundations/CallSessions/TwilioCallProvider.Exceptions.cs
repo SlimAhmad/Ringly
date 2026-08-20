@@ -92,6 +92,82 @@ public partial class TwilioCallProvider
         }
     }
 
+    private delegate ValueTask<Channel> ReturningChannelFunction();
+
+    // Separate TryCatch overload (not the CallSession-returning one above) since
+    // ConnectAgentToQueueAsync returns Channel — same catch ladder and CreateAndLog* helpers,
+    // just one extra validation-exception catch for this routine's own request-shape check.
+    private async ValueTask<Channel> TryCatchChannel(ReturningChannelFunction returningChannelFunction)
+    {
+        try
+        {
+            return await returningChannelFunction();
+        }
+        catch (InvalidConnectAgentToQueueRequestException invalidConnectAgentToQueueRequestException)
+        {
+            throw await CreateAndLogValidationException(invalidConnectAgentToQueueRequestException);
+        }
+        catch (HttpResponseBadRequestException)
+        {
+            var invalidCallParticipantException = new InvalidCallParticipantException();
+            throw await CreateAndLogDependencyValidationException(invalidCallParticipantException);
+        }
+        catch (HttpResponseUnauthorizedException httpResponseUnauthorizedException)
+        {
+            var failedTwilioCallProviderDependencyException =
+                new FailedTwilioCallProviderDependencyException(httpResponseUnauthorizedException);
+
+            throw await CreateAndLogCriticalDependencyException(failedTwilioCallProviderDependencyException);
+        }
+        catch (HttpResponseForbiddenException httpResponseForbiddenException)
+        {
+            var failedTwilioCallProviderDependencyException =
+                new FailedTwilioCallProviderDependencyException(httpResponseForbiddenException);
+
+            throw await CreateAndLogCriticalDependencyException(failedTwilioCallProviderDependencyException);
+        }
+        catch (HttpResponseNotFoundException httpResponseNotFoundException)
+        {
+            var failedTwilioCallProviderDependencyException =
+                new FailedTwilioCallProviderDependencyException(httpResponseNotFoundException);
+
+            throw await CreateAndLogCriticalDependencyException(failedTwilioCallProviderDependencyException);
+        }
+        catch (HttpRequestException httpRequestException)
+        {
+            var failedTwilioCallProviderDependencyException =
+                new FailedTwilioCallProviderDependencyException(httpRequestException);
+
+            throw await CreateAndLogCriticalDependencyException(failedTwilioCallProviderDependencyException);
+        }
+        catch (HttpResponseInternalServerErrorException httpResponseInternalServerErrorException)
+        {
+            var failedTwilioCallProviderDependencyException =
+                new FailedTwilioCallProviderDependencyException(httpResponseInternalServerErrorException);
+
+            throw await CreateAndLogDependencyException(failedTwilioCallProviderDependencyException);
+        }
+        catch (HttpResponseServiceUnavailableException httpResponseServiceUnavailableException)
+        {
+            var failedTwilioCallProviderDependencyException =
+                new FailedTwilioCallProviderDependencyException(httpResponseServiceUnavailableException);
+
+            throw await CreateAndLogDependencyException(failedTwilioCallProviderDependencyException);
+        }
+        catch (HttpResponseException httpResponseException)
+        {
+            var failedTwilioCallProviderDependencyException =
+                new FailedTwilioCallProviderDependencyException(httpResponseException);
+
+            throw await CreateAndLogDependencyException(failedTwilioCallProviderDependencyException);
+        }
+        catch (Exception exception)
+        {
+            var failedCallProviderServiceException = new FailedCallProviderServiceException(exception);
+            throw await CreateAndLogServiceException(failedCallProviderServiceException);
+        }
+    }
+
     private async ValueTask<CallSessionValidationException> CreateAndLogValidationException(Xeption exception)
     {
         var callSessionValidationException = new CallSessionValidationException(exception);

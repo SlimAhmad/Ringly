@@ -75,12 +75,21 @@ npm run watch:css   # watches for changes while developing
 3. **Support**: enter a queue name and tap **Request support** — this
    provisions a fresh identity via `Ringly.Samples.WebApi`'s
    `ClientsController`, registers this app's `ICallClient` with it, then
-   routes it into the named queue via `SupportController`. Wait for the
-   resulting call like any other incoming call.
-4. **Agent console**: enter an agent app name, toggle **Available**, and
-   watch the "Incoming calls" list — calls routed to a queue this agent's
-   app is watching appear here in real time (via `AgentsController`'s
-   Server-Sent Events stream), with a **Claim** button per entry.
+   routes it into the named queue via `SupportController`. This originates a
+   real call *to this app's own newly-registered identity* — **you must
+   answer it** like any other incoming call before you're actually placed on
+   hold in the queue.
+4. **Agent console**: register a second instance of this app (or another
+   sample) under a known SIP extension via step 1's Register panel first —
+   e.g. `1001`. Then, in the Agent Console, set **"Agent app name" to that
+   exact same extension** and toggle **Available**. Nothing in this UI states
+   it, but `agentAppName` IS treated as the agent's own SIP extension: claiming
+   originates a real call to it. Watch the "Incoming calls" list — customers
+   routed into a queue via step 3 appear here in real time, with a **Claim**
+   button per entry. Claiming rings a new incoming call on the agent's own
+   registered device (the same one from step 1's Register panel) — answer it
+   to actually talk to the customer. Full details:
+   [WebApi README](../Ringly.Samples.WebApi/README.md#customer-support-walkthrough).
 
 Recording controls during an active claimed call are not wired into this UI
 yet — see the `AgentsController`/`RecordingsController` HTTP endpoints in
