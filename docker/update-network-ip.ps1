@@ -18,11 +18,13 @@ docker/asterisk/config/rtp.conf's externaddr comment for the full story:
   - docker/asterisk/config/rtp.conf's externaddr (the RTP/ICE engine's OWN, completely separate
     NAT-traversal setting - pjsip.conf's external_media_address only rewrites the SDP's "c="
     line; the actual "a=candidate:...typ host" line real clients dial into comes from here)
-  - samples/Ringly.Samples.Maui/MauiProgram.cs's CurrentLanHostAddress constant (what the MAUI
-    app on a real Android device uses to reach Asterisk/coturn)
+  - samples/Ringly.Samples.Maui/MauiProgram.cs's and
+    samples/Ringly.Samples.BlazorHybrid/MauiProgram.cs's CurrentLanHostAddress constant (what
+    each MAUI app on a real Android device uses to reach Asterisk/coturn - both samples carry
+    their own independent copy, see either file's own comment for why)
 
-This script detects the current IPv4 address on the given network adapter, updates all four
-files, and rebuilds+recreates the coturn and asterisk containers - replacing the previous
+This script detects the current IPv4 address on the given network adapter, updates all of the
+above, and rebuilds+recreates the coturn and asterisk containers - replacing the previous
 multi-step manual process (find IP, edit files, rebuild containers) with one command.
 
 .PARAMETER InterfaceAlias
@@ -46,7 +48,10 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $turnConf = Join-Path $PSScriptRoot "coturn\turnserver.conf"
 $pjsipConf = Join-Path $PSScriptRoot "asterisk\config\pjsip.conf"
 $rtpConf = Join-Path $PSScriptRoot "asterisk\config\rtp.conf"
-$mauiProgram = Join-Path $repoRoot "samples\Ringly.Samples.Maui\MauiProgram.cs"
+$mauiPrograms = @(
+    (Join-Path $repoRoot "samples\Ringly.Samples.Maui\MauiProgram.cs"),
+    (Join-Path $repoRoot "samples\Ringly.Samples.BlazorHybrid\MauiProgram.cs")
+)
 $composeFile = Join-Path $PSScriptRoot "docker-compose.yml"
 
 $ip = Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias $InterfaceAlias -ErrorAction SilentlyContinue |
@@ -93,17 +98,22 @@ if ($updatedRtpContent -eq $rtpContent -and $rtpContent -notmatch [regex]::Escap
 Set-Content -Path $rtpConf -Value $updatedRtpContent -NoNewline
 Write-Host "Updated $rtpConf"
 
-# MauiProgram.cs: replace only the string literal on the line right after the "ringly:lan-ip"
-# marker comment, so this keeps working even if the constant gets renamed again later.
-$mauiContent = Get-Content $mauiProgram -Raw
+# MauiProgram.cs (both samples): replace only the string literal on the line right after the
+# "ringly:lan-ip" marker comment, so this keeps working even if the constant gets renamed again
+# later. Looped since Ringly.Samples.Maui and Ringly.Samples.BlazorHybrid each carry their own
+# independent copy of this constant (separate MAUI processes, separate DI containers).
 $pattern = '(// ringly:lan-ip\r?\n\s*const string \w+ = ")[^"]*(";)'
 $evaluator = [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $m.Groups[1].Value + $ip + $m.Groups[2].Value }
-$updatedMauiContent = [System.Text.RegularExpressions.Regex]::Replace($mauiContent, $pattern, $evaluator)
-if ($updatedMauiContent -eq $mauiContent -and $mauiContent -notmatch [regex]::Escape($ip)) {
-    Write-Warning "ringly:lan-ip marker not found in $mauiProgram - check the file wasn't restructured."
+
+foreach ($mauiProgram in $mauiPrograms) {
+    $mauiContent = Get-Content $mauiProgram -Raw
+    $updatedMauiContent = [System.Text.RegularExpressions.Regex]::Replace($mauiContent, $pattern, $evaluator)
+    if ($updatedMauiContent -eq $mauiContent -and $mauiContent -notmatch [regex]::Escape($ip)) {
+        Write-Warning "ringly:lan-ip marker not found in $mauiProgram - check the file wasn't restructured."
+    }
+    Set-Content -Path $mauiProgram -Value $updatedMauiContent -NoNewline
+    Write-Host "Updated $mauiProgram"
 }
-Set-Content -Path $mauiProgram -Value $updatedMauiContent -NoNewline
-Write-Host "Updated $mauiProgram"
 
 # NOT "restart" for either container - both coturn/Dockerfile and asterisk/Dockerfile COPY their
 # config into the image at build time rather than bind-mounting it, so a plain restart brings the
@@ -127,4 +137,4 @@ docker rmi docker-coturn:latest docker-asterisk:latest 2>$null
 docker compose -f $composeFile up -d --build coturn asterisk
 
 Write-Host ""
-Write-Host "Done. Rebuild/redeploy the MAUI app (Windows + Android) to pick up the new host address."
+Write-Host "Done. Rebuild/redeploy the MAUI apps (Ringly.Samples.Maui and Ringly.Samples.BlazorHybrid, Windows + Android) to pick up the new host address."
