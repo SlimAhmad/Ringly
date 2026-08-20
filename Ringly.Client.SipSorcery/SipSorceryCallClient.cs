@@ -615,7 +615,25 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         var handle = new CallHandle { Id = Guid.NewGuid().ToString() };
         this.pendingIncomingCalls[handle.Id] = uas;
 
-        this.PublishEvent("IncomingCall", handle, sipRequest.Header.From.FromURI.User);
+        // AnswerCallAsync always answers with a video track available when a videoSource/videoSink
+        // is registered (see CreateMediaSession's own comment on why includeVideo=true there
+        // regardless), so whether the resulting call actually carries video is decided entirely by
+        // the caller's OFFER — inspected directly here, at the moment it arrives, so the UI can show
+        // the right incoming-call affordance (and later, once answered, the right in-call controls)
+        // without guessing.
+        bool includesVideo = false;
+
+        try
+        {
+            includesVideo = SDP.ParseSDPDescription(sipRequest.Body).Media
+                .Any(mediaAnnouncement => mediaAnnouncement.Media == SDPMediaTypesEnum.video);
+        }
+        catch (Exception exception)
+        {
+            Logger.LogError(exception, "Failed to parse incoming call offer SDP for video capability.");
+        }
+
+        this.PublishEvent("IncomingCall", handle, sipRequest.Header.From.FromURI.User, includesVideo);
     }
 
     private void HandleDtmfTone(byte tone, int durationMs) =>
@@ -630,12 +648,13 @@ public class SipSorceryCallClient : ICallClient, IDisposable
     private void HandleClientCallFailed(ISIPClientUserAgent uac, string errorMessage, SIPResponse sipResponse) =>
         this.PublishEvent("CallFailed", new CallHandle());
 
-    private void PublishEvent(string eventType, CallHandle handle, string remoteExtension = "") =>
+    private void PublishEvent(string eventType, CallHandle handle, string remoteExtension = "", bool includesVideo = false) =>
         this.events.OnNext(new CallClientEvent
         {
             EventType = eventType,
             Handle = handle,
             OccurredDate = DateTimeOffset.UtcNow,
-            RemoteExtension = remoteExtension
+            RemoteExtension = remoteExtension,
+            IncludesVideo = includesVideo
         });
 }
