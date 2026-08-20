@@ -42,6 +42,41 @@ public partial class AsteriskCallCenterFoundationServiceTests
         this.loggingBrokerMock.VerifyNoOtherCalls();
     }
 
+    [Fact]
+    public async Task ShouldThrowDependencyValidationExceptionOnDeleteStoredRecordingIfNotFoundErrorOccursAndLogItAsync()
+    {
+        // given
+        string someRecordingName = GetRandomString();
+        var httpResponseNotFoundException = new HttpResponseNotFoundException();
+        var notFoundRecordingException = new NotFoundRecordingException(httpResponseNotFoundException);
+        var expectedException = new RecordingDependencyValidationException(notFoundRecordingException);
+
+        this.asteriskBrokerMock.Setup(broker =>
+            broker.DeleteStoredRecordingAsync(someRecordingName))
+                .ThrowsAsync(httpResponseNotFoundException);
+
+        // when
+        ValueTask deleteTask =
+            this.asteriskCallCenterFoundationService.DeleteStoredRecordingAsync(someRecordingName);
+
+        RecordingDependencyValidationException actualException =
+            await Assert.ThrowsAsync<RecordingDependencyValidationException>(deleteTask.AsTask);
+
+        // then
+        actualException.Should().BeEquivalentTo(expectedException);
+
+        this.asteriskBrokerMock.Verify(broker =>
+            broker.DeleteStoredRecordingAsync(someRecordingName),
+                Times.Once);
+
+        this.loggingBrokerMock.Verify(broker =>
+            broker.LogErrorAsync(It.Is(SameExceptionAs(expectedException))),
+                Times.Once);
+
+        this.asteriskBrokerMock.VerifyNoOtherCalls();
+        this.loggingBrokerMock.VerifyNoOtherCalls();
+    }
+
     [Theory]
     [MemberData(nameof(RecordingCriticalDependencyExceptions))]
     public async Task ShouldThrowCriticalDependencyExceptionOnDeleteStoredRecordingIfErrorOccursAndLogItAsync(

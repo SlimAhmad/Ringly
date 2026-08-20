@@ -43,6 +43,42 @@ public partial class AsteriskCallCenterFoundationServiceTests
         this.loggingBrokerMock.VerifyNoOtherCalls();
     }
 
+    [Fact]
+    public async Task ShouldThrowDependencyValidationExceptionOnCopyStoredRecordingIfNotFoundErrorOccursAndLogItAsync()
+    {
+        // given
+        string someRecordingName = GetRandomString();
+        string someDestinationName = GetRandomString();
+        var httpResponseNotFoundException = new HttpResponseNotFoundException();
+        var notFoundRecordingException = new NotFoundRecordingException(httpResponseNotFoundException);
+        var expectedException = new RecordingDependencyValidationException(notFoundRecordingException);
+
+        this.asteriskBrokerMock.Setup(broker =>
+            broker.CopyStoredRecordingAsync(someRecordingName, someDestinationName))
+                .ThrowsAsync(httpResponseNotFoundException);
+
+        // when
+        ValueTask copyTask = this.asteriskCallCenterFoundationService.CopyStoredRecordingAsync(
+            someRecordingName, someDestinationName);
+
+        RecordingDependencyValidationException actualException =
+            await Assert.ThrowsAsync<RecordingDependencyValidationException>(copyTask.AsTask);
+
+        // then
+        actualException.Should().BeEquivalentTo(expectedException);
+
+        this.asteriskBrokerMock.Verify(broker =>
+            broker.CopyStoredRecordingAsync(someRecordingName, someDestinationName),
+                Times.Once);
+
+        this.loggingBrokerMock.Verify(broker =>
+            broker.LogErrorAsync(It.Is(SameExceptionAs(expectedException))),
+                Times.Once);
+
+        this.asteriskBrokerMock.VerifyNoOtherCalls();
+        this.loggingBrokerMock.VerifyNoOtherCalls();
+    }
+
     [Theory]
     [MemberData(nameof(RecordingCriticalDependencyExceptions))]
     public async Task ShouldThrowCriticalDependencyExceptionOnCopyStoredRecordingIfErrorOccursAndLogItAsync(
