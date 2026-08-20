@@ -18,4 +18,15 @@ public partial class AsteriskBroker
         await this.PostAsync(
             $"{BridgesRelativeUrl}/{Uri.EscapeDataString(bridgeId)}/removeChannel" +
             $"?channel={Uri.EscapeDataString(channelId)}");
+
+    // Only meaningful on a "holding" bridge — starting MOH on it plays to every current AND
+    // future member automatically (Asterisk's own documented holding-bridge behavior), so this is
+    // called once at queue-creation time, not per-customer.
+    public async ValueTask StartMusicOnHoldAsync(string bridgeId, string mohClass) =>
+        await this.PostAsync(
+            $"{BridgesRelativeUrl}/{Uri.EscapeDataString(bridgeId)}/moh" +
+            $"?mohClass={Uri.EscapeDataString(mohClass)}");
+
+    public async ValueTask StopMusicOnHoldAsync(string bridgeId) =>
+        await this.DeleteAsync($"{BridgesRelativeUrl}/{Uri.EscapeDataString(bridgeId)}/moh");
 }
