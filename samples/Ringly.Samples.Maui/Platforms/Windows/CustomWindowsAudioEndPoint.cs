@@ -43,7 +43,7 @@ public sealed class CustomWindowsAudioEndPoint : IAudioSource, IAudioSink, IDisp
     private volatile bool isCapturing;
     private MMDevice? captureDeviceForDiagnostics;
     private Thread? deviceMeterDiagnosticsThread;
-    private WaveOutEvent? waveOut;
+    private IWavePlayer? waveOut;
     private BufferedWaveProvider? waveProvider;
     private bool isSourcePaused;
     private bool isSinkPaused;
@@ -451,7 +451,31 @@ public sealed class CustomWindowsAudioEndPoint : IAudioSource, IAudioSink, IDisp
             DiscardOnBufferOverflow = true
         };
 
-        this.waveOut = new WaveOutEvent();
+        // Same Communications-role targeting as StartAudio's capture device, for the same reason
+        // (see its own comment) — confirmed live that plain WaveOutEvent() plays through WinMM's
+        // default device (-1, "default"), which follows the OS's general Multimedia-role output
+        // and can silently differ from the Communications-role device real VoIP apps (and this
+        // class's own capture side) actually use. Confirmed as a genuine live bug, not a guess:
+        // decoded remote audio was reaching WaveOutEvent.Play()="Playing" with real non-zero PCM
+        // amplitude (WritePlayback's own diagnostics proved this) while still being completely
+        // inaudible — exactly the symptom of audio correctly reaching the wrong output device.
+        try
+        {
+            var deviceEnumerator = new MMDeviceEnumerator();
+            MMDevice playbackDevice = deviceEnumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Communications);
+
+            Logger.LogInformation(
+                "Using Communications-role playback device \"{DeviceName}\" for call audio output.",
+                playbackDevice.FriendlyName);
+
+            this.waveOut = new WasapiOut(playbackDevice, AudioClientShareMode.Shared, true, 50);
+        }
+        catch (Exception exception)
+        {
+            Logger.LogError(exception, "Failed to select Communications-role playback device — falling back to the default output device.");
+            this.waveOut = new WaveOutEvent();
+        }
+
         this.waveOut.Init(this.waveProvider);
     }
 
@@ -519,7 +543,7 @@ public sealed class CustomWindowsAudioEndPoint : IAudioSource, IAudioSink, IDisp
     public Task StartAudioSink()
     {
         this.waveOut?.Play();
-        Logger.LogInformation("WaveOutEvent.Play() called, PlaybackState is now {PlaybackState}.", this.waveOut?.PlaybackState);
+        Logger.LogInformation("Playback device Play() called, PlaybackState is now {PlaybackState}.", this.waveOut?.PlaybackState);
         return Task.CompletedTask;
     }
 
