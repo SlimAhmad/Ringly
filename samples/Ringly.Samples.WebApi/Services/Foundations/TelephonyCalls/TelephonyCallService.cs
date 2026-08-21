@@ -58,7 +58,21 @@ public partial class TelephonyCallService : ITelephonyCallService
 
         ValidateStorageTelephonyCallExists(maybeTelephonyCall, telephonyCall.Id);
 
-        return await this.storageBroker.UpdateTelephonyCallAsync(telephonyCall);
+        // See RecordingService.ModifyRecordingAsync's own comment — SelectTelephonyCallByIdAsync
+        // above already tracks an instance with this Id (EF's FindAsync); updating the
+        // caller-supplied `telephonyCall` instead, a different object with the same key, throws
+        // "cannot be tracked because another instance with the same key value... is already
+        // being tracked." Copying onto the already-tracked instance avoids the conflict.
+        maybeTelephonyCall!.CallerIdentityId = telephonyCall.CallerIdentityId;
+        maybeTelephonyCall.RecipientIdentityId = telephonyCall.RecipientIdentityId;
+        maybeTelephonyCall.Status = telephonyCall.Status;
+        maybeTelephonyCall.AsteriskChannelId = telephonyCall.AsteriskChannelId;
+        maybeTelephonyCall.AsteriskBridgeId = telephonyCall.AsteriskBridgeId;
+        maybeTelephonyCall.TripId = telephonyCall.TripId;
+        maybeTelephonyCall.StartedAt = telephonyCall.StartedAt;
+        maybeTelephonyCall.EndedAt = telephonyCall.EndedAt;
+
+        return await this.storageBroker.UpdateTelephonyCallAsync(maybeTelephonyCall);
     });
 
     public ValueTask<TelephonyCall> RemoveTelephonyCallByIdAsync(Guid telephonyCallId) =>

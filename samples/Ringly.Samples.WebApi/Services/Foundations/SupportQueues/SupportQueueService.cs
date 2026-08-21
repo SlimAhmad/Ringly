@@ -58,7 +58,16 @@ public partial class SupportQueueService : ISupportQueueService
 
         ValidateStorageSupportQueueExists(maybeSupportQueue, supportQueue.Id);
 
-        return await this.storageBroker.UpdateSupportQueueAsync(supportQueue);
+        // See RecordingService.ModifyRecordingAsync's own comment — SelectSupportQueueByIdAsync
+        // above already tracks an instance with this Id (EF's FindAsync); updating the
+        // caller-supplied `supportQueue` instead, a different object with the same key, throws
+        // "cannot be tracked because another instance with the same key value... is already
+        // being tracked." Copying onto the already-tracked instance avoids the conflict.
+        maybeSupportQueue!.QueueName = supportQueue.QueueName;
+        maybeSupportQueue.BridgeId = supportQueue.BridgeId;
+        maybeSupportQueue.MusicOnHoldClass = supportQueue.MusicOnHoldClass;
+
+        return await this.storageBroker.UpdateSupportQueueAsync(maybeSupportQueue);
     });
 
     public ValueTask<SupportQueue> RemoveSupportQueueByIdAsync(Guid supportQueueId) =>

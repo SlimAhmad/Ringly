@@ -21,8 +21,13 @@ public partial class TelephonyIdentityServiceTests
             broker.SelectTelephonyIdentityByIdAsync(inputTelephonyIdentity.Id))
                 .ReturnsAsync(storageTelephonyIdentity);
 
+        // ModifyTelephonyIdentityAsync copies the input's changes onto the already-tracked
+        // instance SelectTelephonyIdentityByIdAsync returned (storageTelephonyIdentity), then
+        // updates that same instance — not the caller-supplied inputTelephonyIdentity — to avoid
+        // EF Core's "already being tracked" conflict (confirmed live, see
+        // RecordingService.ModifyRecordingAsync).
         this.storageBrokerMock.Setup(broker =>
-            broker.UpdateTelephonyIdentityAsync(inputTelephonyIdentity))
+            broker.UpdateTelephonyIdentityAsync(storageTelephonyIdentity))
                 .ReturnsAsync(updatedTelephonyIdentity);
 
         // when
@@ -37,7 +42,7 @@ public partial class TelephonyIdentityServiceTests
                 Times.Once);
 
         this.storageBrokerMock.Verify(broker =>
-            broker.UpdateTelephonyIdentityAsync(inputTelephonyIdentity),
+            broker.UpdateTelephonyIdentityAsync(storageTelephonyIdentity),
                 Times.Once);
 
         this.storageBrokerMock.VerifyNoOtherCalls();
