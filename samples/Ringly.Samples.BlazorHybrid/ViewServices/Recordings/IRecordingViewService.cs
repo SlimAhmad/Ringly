@@ -27,4 +27,5 @@ public interface IRecordingViewService : IDisposable
     ValueTask StopAsync(string recordingName);
     ValueTask CancelAsync(string recordingName);
     ValueTask RemoveAsync(string recordingName);
+    ValueTask PlayAsync(string recordingName);
 }

@@ -7,6 +7,7 @@ namespace Ringly.Samples.BlazorHybrid.Brokers.Apis;
 public interface IRecordingApiBroker
 {
     ValueTask<IReadOnlyList<RecordingRow>> GetRecordingsAsync();
+    ValueTask<Uri> GetAccessUrlAsync(string recordingName);
     ValueTask PostRecordingAsync(string bridgeId, string recordingName, string format);
     ValueTask PostPauseAsync(string recordingName);
     ValueTask PostUnpauseAsync(string recordingName);

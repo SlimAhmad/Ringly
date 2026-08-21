@@ -28,5 +28,7 @@ public partial class RecordingsPanel : ComponentBase, IDisposable
 
     private Task OnRemoveClickedAsync(string recordingName) => this.ViewService.RemoveAsync(recordingName).AsTask();
 
+    private Task OnPlayClickedAsync(string recordingName) => this.ViewService.PlayAsync(recordingName).AsTask();
+
     public void Dispose() => this.ViewService.StateChanged -= this.OnViewServiceStateChanged;
 }

@@ -44,14 +44,15 @@
                         <span class="text-xs text-slate-400">@recording.State</span>
                     </div>
 
-                    @if (!string.IsNullOrEmpty(recording.BlobUrl))
-                    {
-                        <a href="@recording.BlobUrl" target="_blank" class="text-xs text-indigo-400 hover:underline break-all">
-                            @recording.BlobUrl
-                        </a>
-                    }
-
                     <div class="flex flex-wrap gap-1">
+                        @if (!string.IsNullOrEmpty(recording.BlobUrl))
+                        {
+                            <AppButton CssClass="rounded-lg bg-indigo-800 px-2 py-1 text-xs font-medium text-indigo-100 hover:bg-indigo-700"
+                                       IsDisabled="@this.ViewService.IsBusy"
+                                       OnClick="@(() => this.OnPlayClickedAsync(recording.RecordingName))">
+                                ▶ Play
+                            </AppButton>
+                        }
                         <AppButton CssClass="rounded-lg bg-slate-700 px-2 py-1 text-xs font-medium text-slate-100 hover:bg-slate-600"
                                    IsDisabled="@this.ViewService.IsBusy"
                                    OnClick="@(() => this.OnPauseClickedAsync(recording.RecordingName))">
