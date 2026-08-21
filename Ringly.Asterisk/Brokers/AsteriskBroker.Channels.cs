@@ -23,4 +23,13 @@ public partial class AsteriskBroker
     // Asterisk's own channel-supervision in charge of it.
     public async ValueTask HangupChannelAsync(string channelId) =>
         await this.DeleteAsync($"{ChannelsRelativeUrl}/{Uri.EscapeDataString(channelId)}");
+
+    // ARI's POST /channels/{id}/move reassigns an already-Stasis'd channel to a different app —
+    // confirmed against a real Asterisk instance, requires only that the channel is currently in
+    // *some* Stasis app, not specifically this one. Lets Ringly's own app take control of a
+    // channel an external party (e.g. Dograh, on its own independent Stasis app) is holding.
+    public async ValueTask MoveChannelAsync(string channelId) =>
+        await this.PostAsync(
+            $"{ChannelsRelativeUrl}/{Uri.EscapeDataString(channelId)}/move" +
+            $"?app={Uri.EscapeDataString(this.asteriskOptions.StasisAppName)}");
 }

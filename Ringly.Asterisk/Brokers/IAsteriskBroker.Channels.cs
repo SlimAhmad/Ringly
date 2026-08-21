@@ -6,4 +6,5 @@ public partial interface IAsteriskBroker
 {
     ValueTask<Channel> InsertChannelAsync(string endpoint);
     ValueTask HangupChannelAsync(string channelId);
+    ValueTask MoveChannelAsync(string channelId);
 }

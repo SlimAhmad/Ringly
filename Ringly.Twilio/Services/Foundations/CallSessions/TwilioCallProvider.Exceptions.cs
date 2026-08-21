@@ -31,6 +31,10 @@ public partial class TwilioCallProvider
         {
             throw await CreateAndLogValidationException(notFoundSipCredentialsException);
         }
+        catch (InvalidEscalateToQueueRequestException invalidEscalateToQueueRequestException)
+        {
+            throw await CreateAndLogValidationException(invalidEscalateToQueueRequestException);
+        }
         catch (HttpResponseBadRequestException)
         {
             var invalidCallParticipantException = new InvalidCallParticipantException();

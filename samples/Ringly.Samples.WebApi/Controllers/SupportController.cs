@@ -68,4 +68,45 @@ public class SupportController : RESTFulController
             return this.InternalServerError(callProviderServiceException);
         }
     }
+
+    // Hands an in-progress call Ringly never originated (e.g. one Dograh's own ARI Stasis app is
+    // currently handling) into a human queue — the endpoint an external AI agent's own
+    // tool/function-calling webhook hits when a caller asks for a real person. Same broadcast
+    // wiring as PostRouteAsync above so the escalated caller shows up for agents via the existing
+    // AgentsController claim flow unchanged.
+    [HttpPost("escalate")]
+    public async ValueTask<ActionResult<CallSession>> PostEscalateAsync(
+        [FromQuery] string channelId, [FromQuery] string queueName)
+    {
+        try
+        {
+            CallSession session = await this.callProvider.EscalateToQueueAsync(channelId, queueName);
+
+            this.supportQueueBroadcastRegistry.PublishWaitingCustomer(
+                Guid.NewGuid(), queueName, session.CustomerChannelId, session.BridgeId);
+
+            return this.Created(value: session);
+        }
+        catch (CallSessionValidationException callSessionValidationException)
+            when (callSessionValidationException.InnerException is NotFoundQueueException)
+        {
+            return this.NotFound(callSessionValidationException.InnerException);
+        }
+        catch (CallSessionValidationException callSessionValidationException)
+        {
+            return this.BadRequest(callSessionValidationException.InnerException);
+        }
+        catch (CallSessionDependencyValidationException callSessionDependencyValidationException)
+        {
+            return this.BadRequest(callSessionDependencyValidationException.InnerException);
+        }
+        catch (CallProviderDependencyException callProviderDependencyException)
+        {
+            return this.InternalServerError(callProviderDependencyException);
+        }
+        catch (CallProviderServiceException callProviderServiceException)
+        {
+            return this.InternalServerError(callProviderServiceException);
+        }
+    }
 }
