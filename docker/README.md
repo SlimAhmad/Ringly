@@ -149,13 +149,19 @@ Ringly coexist as two independent Stasis applications on the *same* Asterisk PBX
 The rest is infra; this part is a real UI form only a person can fill in — it can't be
 seeded or scripted:
 
-1. Open `http://localhost:3010` (Dograh's dashboard).
+1. Sign up at `http://localhost:3010` with a normal-looking email — a reserved TLD like
+   `.local` fails signup with a real 422 ("not a valid email address"); use something like
+   `you@example.com` or your own real address instead.
 2. Under its Asterisk/telephony connection settings, set **Stasis App Name** = `dograh`,
    **password** = `dograh-dev-ari`, **ARI base URL** = `http://asterisk:8088`.
-3. Add a real LLM provider key under Dograh's own settings — there's no config surface for
+3. Under "websocket_client.conf Name", enter `dograh_media` — the connection name already
+   defined in `websocket_client.conf`.
+4. Add a real LLM provider key under Dograh's own settings — there's no config surface for
    this in this repo, it lives entirely inside Dograh's UI.
-4. Configure (or accept the default) AI agent/workflow that should answer calls arriving on
-   extension `1002`.
+5. Configure (or accept the default) AI agent/workflow that should answer calls arriving on
+   extension `1002`, then add it as a phone number: "Add phone number" → **Address** = `1002`
+   (a bare extension — the same shape as the form's own `101` placeholder example, not a `+`
+   PSTN number or a `sip:` URI).
 
 ### Talk to the AI agent
 
@@ -163,7 +169,7 @@ Once the dashboard is configured, dial `1002` from any already-registered sample
 screen (see e.g. [Ringly.Samples.Maui's README](../samples/Ringly.Samples.Maui/README.md)) —
 it's an ordinary call from the app's own perspective, no app code involved.
 
-**Verified locally** (2026-08-13): `chan_websocket`/`res_websocket_client`/`res_http_websocket`/
+**Verified locally** (2026-08-21): `chan_websocket`/`res_websocket_client`/`res_http_websocket`/
 `res_pjsip_transport_websocket` all loaded cleanly in the live container;
 `res_websocket_client.so` reloads without error after adding `websocket_client.conf`; the
 `dograh_ai` dialplan context and `[dograh]` ARI user both load correctly
@@ -172,9 +178,28 @@ it's an ordinary call from the app's own perspective, no app code involved.
 bidirectional container-name connectivity — `dograh-api` reached `asterisk:8088`'s ARI (`200` on
 `/ari/asterisk/info` with the `ringly` credentials) and `asterisk` resolved `dograh-api` by DNS;
 extension `1002` reassigned to `dograh_ai`/`allow=ulaw` (confirmed via `pjsip show endpoint
-1002`). An actual end-to-end call through Dograh's dashboard still needs the manual dashboard
-setup above (Stasis app credentials, LLM provider key) done once by hand before it can be
-confirmed live.
+1002`); a real sign-up against `dograh-api`'s `/api/v1/auth/signup` returned 200 with a valid
+JWT (see `BACKEND_API_ENDPOINT` below); the `default` MOH class now has real audio (see below).
+An actual end-to-end call through Dograh's dashboard still needs the manual dashboard setup
+above (Stasis app credentials, LLM provider key, phone number) done once by hand before it can
+be confirmed live.
+
+**`BACKEND_API_ENDPOINT` gotcha** (confirmed live): dograh-api's health check does a 5s-timeout
+Cloudflare tunnel lookup whenever this resolves to `localhost` (the default), which we don't run
+— made `/api/v1/health` consistently take ~4s and trip the dashboard's own health-check timeout.
+Pointing it at the Docker service name (`dograh-api`) fixes that, but the dashboard *also* serves
+this value straight to the browser and uses it directly for real sign-up/sign-in requests — a
+hostname that only resolves inside Docker's network breaks those with
+`net::ERR_NAME_NOT_RESOLVED`. `localtest.me` (a real public domain that resolves to `127.0.0.1`)
+satisfies both: a genuine hostname that skips the tunnel-lookup check, while still reachable from
+the host browser.
+
+**MOH gotcha** (confirmed live): this Asterisk image ships no `musiconhold.conf` and no sample
+audio at all — `moh show classes` returned nothing and `/var/lib/asterisk/moh/` was empty, so
+every on-hold bridge (queues, and any holding bridge Dograh's own ARI app might use) had a MOH
+engine with nothing to play. Fixed by installing the real `asterisk-moh-opsound-wav` Debian
+package (the same one Asterisk's own installer uses for default MOH) and adding a `[default]`
+class pointing at it — same `--renew-anon-volumes` gotcha applies after rebuilding the image.
 
 ## Not included yet
 

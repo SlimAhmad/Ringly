@@ -13,6 +13,14 @@ RUN mkdir -p /etc/asterisk/keys && \
         -out /etc/asterisk/keys/asterisk.crt \
         -subj "/CN=localhost"
 
+# Confirmed live as a real gap: without this, `moh show classes` reports nothing and
+# /var/lib/asterisk/moh/ is empty — every on-hold bridge has a MOH engine with nothing to
+# play. This is the real Debian package Asterisk's own installer uses for default MOH
+# (royalty-free Opsound-licensed tracks), installed to /usr/share/asterisk/moh.
+RUN apt-get update -qq && \
+    apt-get install -y -qq --no-install-recommends asterisk-moh-opsound-wav && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY config/http.conf /etc/asterisk/
 COPY config/rtp.conf /etc/asterisk/
 COPY config/pjsip.conf /etc/asterisk/
@@ -25,6 +33,7 @@ COPY config/res_pgsql.conf /etc/asterisk/
 COPY config/extconfig.conf /etc/asterisk/
 COPY config/sorcery.conf /etc/asterisk/
 COPY config/websocket_client.conf /etc/asterisk/
+COPY config/musiconhold.conf /etc/asterisk/
 
 RUN chown -R asterisk:asterisk /etc/asterisk/
 
