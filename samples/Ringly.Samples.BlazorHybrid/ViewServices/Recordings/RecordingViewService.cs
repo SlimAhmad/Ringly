@@ -1,4 +1,4 @@
-using Microsoft.JSInterop;
+using Microsoft.Maui.ApplicationModel;
 using Ringly.Samples.BlazorHybrid.Brokers.Apis;
 using Ringly.Samples.BlazorHybrid.Models.Recordings;
 using Ringly.Samples.BlazorHybrid.ViewServices.Agents;
@@ -9,7 +9,6 @@ public sealed class RecordingViewService : IRecordingViewService
 {
     private readonly IRecordingApiBroker recordingApiBroker;
     private readonly IAgentConsoleViewService agentConsoleViewService;
-    private readonly IJSRuntime jsRuntime;
     private List<RecordingRow> recordings = [];
 
     public event Action? StateChanged;
@@ -29,12 +28,10 @@ public sealed class RecordingViewService : IRecordingViewService
 
     public RecordingViewService(
         IRecordingApiBroker recordingApiBroker,
-        IAgentConsoleViewService agentConsoleViewService,
-        IJSRuntime jsRuntime)
+        IAgentConsoleViewService agentConsoleViewService)
     {
         this.recordingApiBroker = recordingApiBroker;
         this.agentConsoleViewService = agentConsoleViewService;
-        this.jsRuntime = jsRuntime;
 
         // Picks up a fresh CurrentBridgeId reactively whenever the agent claims a new call, so
         // this panel's "no active call" state clears itself without the operator needing to
@@ -98,9 +95,10 @@ public sealed class RecordingViewService : IRecordingViewService
         this.RunActionAsync(recordingName, this.recordingApiBroker.DeleteRecordingAsync, "Removed");
 
     // The BlobUrl already on each RecordingRow isn't directly playable — the container is
-    // private, so this resolves a real signed URL first (see RecordingApiBroker's own comment)
-    // and hands it to the platform to actually open, rather than rendering the raw BlobUrl as a
-    // link the way this panel did before.
+    // private, so this resolves a real signed URL first (see RecordingApiBroker's own comment).
+    // Confirmed live: browser JS interop (window.open) throws "Cannot invoke JavaScript outside
+    // of a WebView context" in this MAUI-hosted app — MAUI's own Launcher is the reliable way to
+    // hand an external URL to the OS (opens the system browser) from a Blazor Hybrid app.
     public async ValueTask PlayAsync(string recordingName)
     {
         this.IsBusy = true;
@@ -109,7 +107,7 @@ public sealed class RecordingViewService : IRecordingViewService
         try
         {
             Uri accessUrl = await this.recordingApiBroker.GetAccessUrlAsync(recordingName);
-            await this.jsRuntime.InvokeVoidAsync("open", accessUrl.ToString(), "_blank");
+            await Launcher.Default.OpenAsync(accessUrl);
         }
         catch (Exception exception)
         {
