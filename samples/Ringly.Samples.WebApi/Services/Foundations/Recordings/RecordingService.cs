@@ -56,7 +56,20 @@ public partial class RecordingService : IRecordingService
 
         ValidateStorageRecordingExists(maybeRecording, recording.Id);
 
-        return await this.storageBroker.UpdateRecordingAsync(recording);
+        // Confirmed live as a real bug: SelectRecordingByIdAsync above already tracks an instance
+        // with this Id in the DbContext's change tracker (it goes through EF's FindAsync) —
+        // updating the caller-supplied `recording` parameter instead, a *different* .NET object
+        // with the same key, threw "cannot be tracked because another instance with the same key
+        // value... is already being tracked". Copying the caller's changes onto the
+        // already-tracked instance instead avoids the conflict.
+        maybeRecording!.BridgeId = recording.BridgeId;
+        maybeRecording.RecordingName = recording.RecordingName;
+        maybeRecording.Format = recording.Format;
+        maybeRecording.State = recording.State;
+        maybeRecording.BlobUrl = recording.BlobUrl;
+        maybeRecording.StartedDate = recording.StartedDate;
+
+        return await this.storageBroker.UpdateRecordingAsync(maybeRecording);
     });
 
     public ValueTask<Recording> RemoveRecordingByIdAsync(Guid recordingId) =>
