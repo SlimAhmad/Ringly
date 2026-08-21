@@ -58,10 +58,15 @@ VALUES
      'PJSIP_TRANSFER_HANDLING()=ari-only', 180, 300),
     ('1001', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1001', '1001', 'yes', 'yes',
      'PJSIP_TRANSFER_HANDLING()=ari-only', 180, 300),
-    ('1002', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1002', '1002', 'yes', 'yes',
+    ('1002', 'dograh_ai', 'all', 'ulaw', '1002', '1002', 'yes', 'yes',
      'PJSIP_TRANSFER_HANDLING()=ari-only', 180, 300),
     ('1003', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1003', '1003', 'yes', 'yes',
      'PJSIP_TRANSFER_HANDLING()=ari-only', 180, 300),
     ('1004', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1004', '1004', 'yes', 'yes',
      'PJSIP_TRANSFER_HANDLING()=ari-only', 180, 300)
 ON CONFLICT (id) DO NOTHING;
+-- ON CONFLICT DO NOTHING means this reassignment only applies to a fresh volume — an
+-- already-seeded Postgres data volume keeps 1002's old ride_hailing/opus,ulaw,vp8 row as-is.
+-- Recreate the volume (or run the equivalent UPDATE by hand) to pick this up on an existing
+-- local stack.
+UPDATE ps_endpoints SET context = 'dograh_ai', allow = 'ulaw' WHERE id = '1002';

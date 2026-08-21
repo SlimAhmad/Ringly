@@ -27,15 +27,17 @@ PJSIP objects are realtime (backed by Postgres, row #19b), not static `pjsip.con
 entries. The `migrate` service applies both the schema (Asterisk's own Alembic
 migrations) and `docker/asterisk/seed-test-endpoint.sql` automatically on every
 `docker compose up -d` (idempotent — safe to run against an already-seeded
-database, not just a fresh one). Two ready-to-use extensions, both in the
-`ride_hailing` dialplan context:
+database, not just a fresh one). Five extensions, seeded with these passwords:
 
-| Extension | Password |
-|---|---|
-| `1000` | `ringly-dev-1000` |
-| `1001` | `ringly-dev-1001` |
+| Extension | Password | Context |
+|---|---|---|
+| `1000` | `ringly-dev-1000` | `ride_hailing` |
+| `1001` | `ringly-dev-1001` | `ride_hailing` |
+| `1002` | `ringly-dev-1002` | `dograh_ai` (see the Dograh section below) |
+| `1003` | `ringly-dev-1003` | `ride_hailing` (spare) |
+| `1004` | `ringly-dev-1004` | `ride_hailing` (spare) |
 
-Used by `samples/Ringly.Samples.Maui`'s two-instance call demo. Seeding directly
+`1000`/`1001` are used by `samples/Ringly.Samples.Maui`'s two-instance call demo. Seeding directly
 into the realtime tables like this sidesteps a confirmed upstream Asterisk bug
 ([asterisk/asterisk#1655](https://github.com/asterisk/asterisk/issues/1655)) that
 blocks PJSIP `endpoint` object creation through Asterisk's own dynamic-config ARI
@@ -128,20 +130,38 @@ Ringly coexist as two independent Stasis applications on the *same* Asterisk PBX
   and the matching password, pointed at this Asterisk instance (`asterisk:8088` from inside the
   `dograh` profile's containers — same default Compose network, no extra networking needed).
 - **Dialplan** (`extensions.conf`): a `[dograh_ai]` context routing straight to `Stasis(dograh)`.
-  Assign whichever extensions you want AI-answered from the start to this context — separate
-  from `ride_hailing`/`call_center` above. Calls never move between Dograh's app and Ringly's
+  Extension `1002` is already seeded into this context (see "Seeded test extensions" above) —
+  separate from `ride_hailing`/`call_center`. Calls never move between Dograh's app and Ringly's
   mid-call in either direction.
 - **External media** (`websocket_client.conf`): a `[dograh_media]` connection for
   `chan_websocket`/`res_websocket_client` (confirmed loaded in this image — module names
   `chan_websocket.so`, `res_websocket_client.so`, `res_http_websocket.so`,
   `res_pjsip_transport_websocket.so`) — `connection_type = per_call_config` means this is a
   template; Dograh's own ARI app supplies the real per-call target when it creates the
-  `externalMedia` channel. Dograh's external media uses G.711 μ-law — set `allow=ulaw` at
-  provisioning time for whichever extension you assign to `dograh_ai` (endpoints are
-  dynamic/realtime here, row #19b, not static in `pjsip.conf`).
+  `externalMedia` channel. Dograh's external media uses G.711 μ-law, hence `1002`'s
+  `allow=ulaw` (endpoints are dynamic/realtime here, row #19b, not static in `pjsip.conf`).
 - **Escalation to a human**: a plain `Dial()`/transfer from within Dograh's own workflow into
   one of Ringly's queue extensions — an ordinary inbound call from Dograh's side, no code needed
   on Ringly's.
+
+### One-time dashboard setup
+
+The rest is infra; this part is a real UI form only a person can fill in — it can't be
+seeded or scripted:
+
+1. Open `http://localhost:3010` (Dograh's dashboard).
+2. Under its Asterisk/telephony connection settings, set **Stasis App Name** = `dograh`,
+   **password** = `dograh-dev-ari`, **ARI base URL** = `http://asterisk:8088`.
+3. Add a real LLM provider key under Dograh's own settings — there's no config surface for
+   this in this repo, it lives entirely inside Dograh's UI.
+4. Configure (or accept the default) AI agent/workflow that should answer calls arriving on
+   extension `1002`.
+
+### Talk to the AI agent
+
+Once the dashboard is configured, dial `1002` from any already-registered sample app's Call
+screen (see e.g. [Ringly.Samples.Maui's README](../samples/Ringly.Samples.Maui/README.md)) —
+it's an ordinary call from the app's own perspective, no app code involved.
 
 **Verified locally** (2026-08-13): `chan_websocket`/`res_websocket_client`/`res_http_websocket`/
 `res_pjsip_transport_websocket` all loaded cleanly in the live container;
@@ -150,9 +170,11 @@ Ringly coexist as two independent Stasis applications on the *same* Asterisk PBX
 (`--force-recreate --renew-anon-volumes` needed — same `/etc/asterisk` volume gotcha as row
 #19b); `docker compose --profile dograh up -d` brings up all 5 services healthy; confirmed
 bidirectional container-name connectivity — `dograh-api` reached `asterisk:8088`'s ARI (`200` on
-`/ari/asterisk/info` with the `ringly` credentials) and `asterisk` resolved `dograh-api` by DNS.
-Not verified: an actual end-to-end call through Dograh's dashboard (needs manual dashboard setup
-— Stasis app credentials, extension assignment — that's inherently a UI step).
+`/ari/asterisk/info` with the `ringly` credentials) and `asterisk` resolved `dograh-api` by DNS;
+extension `1002` reassigned to `dograh_ai`/`allow=ulaw` (confirmed via `pjsip show endpoint
+1002`). An actual end-to-end call through Dograh's dashboard still needs the manual dashboard
+setup above (Stasis app credentials, LLM provider key) done once by hand before it can be
+confirmed live.
 
 ## Not included yet
 

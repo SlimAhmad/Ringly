@@ -86,6 +86,11 @@ path works around it; the Android target builds fine via the CLI either way.
 5. Instance B's event log shows `IncomingCall` — tap **Answer**.
 6. Both instances now show `CallAnswered` — a real, connected call.
 
+Or, instead of a second instance, dial `1002` from instance A to talk to a self-hosted AI voice
+agent (Dograh, opt-in) — needs `docker compose --profile dograh up -d` and a one-time dashboard
+setup first, see [docker/README.md](../../docker/README.md#dograh-ai-agent-row-38c-opt-in). No
+app code involved — it's an ordinary call from this app's perspective.
+
 For video: Windows renders local preview through a native `CameraView`
 overlay on top of the Blazor content (`MainPage.xaml`) since a `BlazorWebView`
 can't host a native MAUI control inline; Android's capture is headless

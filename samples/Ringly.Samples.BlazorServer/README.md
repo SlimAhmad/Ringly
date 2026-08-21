@@ -71,7 +71,11 @@ npm run watch:css   # watches for changes while developing
 2. **Call**: enter a target extension, tap **Audio call** or **Video call**.
    Run a second instance of this sample (or `Ringly.Samples.Maui`/
    `Ringly.Samples.BlazorHybrid`) registered as the target extension to
-   answer it.
+   answer it. Or dial `1002` instead of a second instance to talk to a
+   self-hosted AI voice agent (Dograh, opt-in) — needs
+   `docker compose --profile dograh up -d` and a one-time dashboard setup
+   first, see [docker/README.md](../../docker/README.md#dograh-ai-agent-row-38c-opt-in).
+   No app code involved — it's an ordinary call from this app's perspective.
 3. **Support**: enter a queue name and tap **Request support** — this
    provisions a fresh identity via `Ringly.Samples.WebApi`'s
    `ClientsController`, registers this app's `ICallClient` with it, then

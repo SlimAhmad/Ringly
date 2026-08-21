@@ -95,6 +95,14 @@ Microsoft publishes the missing package.
 6. Both instances now show `CallAnswered` — a real, connected SIP call, ready for
    audio through Asterisk.
 
+## Talk to the AI agent (Dograh, opt-in)
+
+Instead of calling a second instance, register one instance (step 2 above) and dial `1002` —
+it's routed to a self-hosted AI voice agent (Dograh) instead of another Ringly client. Needs
+`docker compose --profile dograh up -d` and a one-time dashboard setup first; see
+[docker/README.md](../../docker/README.md#dograh-ai-agent-row-38c-opt-in). No app code
+involved — this is an ordinary call from the app's own perspective.
+
 A call can also arrive from `Ringly.Samples.WebApi`'s `POST /calls` endpoint
 (`ICallProvider.StartCallSessionAsync` server-originates channels to both
 extensions) — the same Answer/Hangup UI handles that origin path too.
