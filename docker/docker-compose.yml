@@ -201,11 +201,17 @@ services:
       # don't run — confirmed live, this made /api/v1/health consistently take ~4s and
       # trip the dograh-ui dashboard's own client-side health-check timeout ("Backend
       # connection failed"), even though the backend was actually up the whole time.
-      # Any hostname other than literally "localhost" (or a parseable IP) is treated as
-      # publicly reachable by that same check and skips the lookup — the Docker service
-      # name works and needs no real public exposure for local dev, since nothing here
-      # relies on BACKEND_API_ENDPOINT for actual inbound webhook delivery.
-      BACKEND_API_ENDPOINT: http://dograh-api:8000
+      # Any hostname other than literally "localhost" (or a parseable IP) skips that
+      # lookup per the same check — but this value isn't just a webhook-URL detail: the
+      # dograh-ui dashboard also serves it straight to the BROWSER (GET /api/config/version)
+      # and calls it directly for real auth requests (sign-up/sign-in) — confirmed live:
+      # pointing it at the Docker service name ("dograh-api") fixed the health check but
+      # broke sign-up with a browser-side net::ERR_NAME_NOT_RESOLVED, since that hostname
+      # only resolves inside Docker's network, not from the host browser. localtest.me is a
+      # real public domain that resolves to 127.0.0.1 (a well-known local-dev trick) — a
+      # genuine hostname, not "localhost" or a parseable IP, so it satisfies the health-check
+      # bypass, while still reaching this container's published port from the browser.
+      BACKEND_API_ENDPOINT: http://localtest.me:8000
       DATABASE_URL: postgresql+asyncpg://postgres:dograh-dev-postgres@dograh-postgres:5432/postgres
       REDIS_URL: redis://:dograh-dev-redis@dograh-redis:6379
       MINIO_ENDPOINT: dograh-minio:9000
