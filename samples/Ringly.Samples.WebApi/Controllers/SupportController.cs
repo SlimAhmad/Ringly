@@ -71,19 +71,21 @@ public class SupportController : RESTFulController
 
     // Hands an in-progress call Ringly never originated (e.g. one Dograh's own ARI Stasis app is
     // currently handling) into a human queue — the endpoint an external AI agent's own
-    // tool/function-calling webhook hits when a caller asks for a real person. Same broadcast
-    // wiring as PostRouteAsync above so the escalated caller shows up for agents via the existing
-    // AgentsController claim flow unchanged.
+    // tool/function-calling webhook hits when a caller asks for a real person. A JSON body
+    // (not query params like PostRouteAsync above) — confirmed live against Dograh's own tool
+    // configuration UI, which always sends a POST tool call's parameters as a JSON body. Same
+    // broadcast wiring as PostRouteAsync so the escalated caller shows up for agents via the
+    // existing AgentsController claim flow unchanged.
     [HttpPost("escalate")]
-    public async ValueTask<ActionResult<CallSession>> PostEscalateAsync(
-        [FromQuery] string channelId, [FromQuery] string queueName)
+    public async ValueTask<ActionResult<CallSession>> PostEscalateAsync([FromBody] EscalateToQueueRequest request)
     {
         try
         {
-            CallSession session = await this.callProvider.EscalateToQueueAsync(channelId, queueName);
+            CallSession session =
+                await this.callProvider.EscalateToQueueAsync(request.ChannelId, request.QueueName);
 
             this.supportQueueBroadcastRegistry.PublishWaitingCustomer(
-                Guid.NewGuid(), queueName, session.CustomerChannelId, session.BridgeId);
+                Guid.NewGuid(), request.QueueName, session.CustomerChannelId, session.BridgeId);
 
             return this.Created(value: session);
         }
@@ -110,3 +112,5 @@ public class SupportController : RESTFulController
         }
     }
 }
+
+public record EscalateToQueueRequest(string ChannelId, string QueueName);
