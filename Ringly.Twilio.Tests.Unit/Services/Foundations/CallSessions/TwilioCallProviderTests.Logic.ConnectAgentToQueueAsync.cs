@@ -21,7 +21,11 @@ public partial class TwilioCallProviderTests
             ConferenceSid = GetRandomString()
         };
 
-        var expectedChannel = new Channel { ChannelId = returnedParticipant.CallSid };
+        var expectedAgentConnection = new AgentConnection
+        {
+            AgentChannelId = returnedParticipant.CallSid,
+            BridgeId = someBridgeId
+        };
 
         this.twilioBrokerMock.Setup(broker =>
             broker.AddParticipantAsync(someBridgeId, It.Is<TwilioParticipantConfig>(config =>
@@ -29,11 +33,11 @@ public partial class TwilioCallProviderTests
                     .ReturnsAsync(returnedParticipant);
 
         // when
-        Channel actualChannel = await this.twilioCallProvider.ConnectAgentToQueueAsync(
+        AgentConnection actualAgentConnection = await this.twilioCallProvider.ConnectAgentToQueueAsync(
             someBridgeId, someCustomerChannelId, someAgentExtension);
 
         // then
-        actualChannel.Should().BeEquivalentTo(expectedChannel);
+        actualAgentConnection.Should().BeEquivalentTo(expectedAgentConnection);
 
         this.twilioBrokerMock.Verify(broker =>
             broker.AddParticipantAsync(someBridgeId, It.Is<TwilioParticipantConfig>(config =>

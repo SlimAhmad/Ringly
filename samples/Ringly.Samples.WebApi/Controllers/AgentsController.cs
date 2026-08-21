@@ -79,16 +79,26 @@ public class AgentsController : RESTFulController
 
         try
         {
-            Channel agentChannel =
+            AgentConnection agentConnection =
                 await this.callProvider.ConnectAgentToQueueAsync(bridgeId!, channelId, agentAppName);
 
             // Confirmed live as a real gap: without this, hanging up on either side left the
             // other side's channel connected indefinitely — nothing was watching for one leg to
             // end and hang up the other, unlike RideHailingCallRouter's own directly-dialed
             // calls. Reuses that router's existing hangup-cascade watch instead of duplicating it.
-            this.rideHailingCallRouter.RegisterPeerChannels(channelId, agentChannel.ChannelId);
+            this.rideHailingCallRouter.RegisterPeerChannels(channelId, agentConnection.AgentChannelId);
 
-            return this.Ok(value: new ClaimResult { Claimed = true, ChannelId = channelId, BridgeId = bridgeId! });
+            // Confirmed live as a real bug: reporting the original holding bridgeId here (instead
+            // of agentConnection.BridgeId) left every downstream consumer — the Recordings panel's
+            // auto-linked bridge chief among them — pointed at the queue's now-empty holding
+            // bridge rather than the actual mixing bridge carrying audio, so recording it produced
+            // nothing.
+            return this.Ok(value: new ClaimResult
+            {
+                Claimed = true,
+                ChannelId = channelId,
+                BridgeId = agentConnection.BridgeId
+            });
         }
         // Every branch below releases the claim — confirmed live as a real bug: a failed
         // ConnectAgentToQueueAsync (e.g. the agent's own device never answers within its 30s

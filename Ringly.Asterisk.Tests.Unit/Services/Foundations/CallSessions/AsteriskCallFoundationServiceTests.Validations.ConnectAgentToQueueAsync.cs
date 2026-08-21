@@ -28,7 +28,7 @@ public partial class AsteriskCallFoundationServiceTests
             new CallSessionValidationException(invalidConnectAgentToQueueRequestException);
 
         // when
-        ValueTask<Channel> connectTask = this.callFoundationService.ConnectAgentToQueueAsync(
+        ValueTask<AgentConnection> connectTask = this.callFoundationService.ConnectAgentToQueueAsync(
             invalidBridgeId!, someCustomerChannelId, someAgentExtension);
 
         CallSessionValidationException actualException =
@@ -68,7 +68,7 @@ public partial class AsteriskCallFoundationServiceTests
             new CallSessionValidationException(invalidConnectAgentToQueueRequestException);
 
         // when
-        ValueTask<Channel> connectTask = this.callFoundationService.ConnectAgentToQueueAsync(
+        ValueTask<AgentConnection> connectTask = this.callFoundationService.ConnectAgentToQueueAsync(
             someBridgeId, invalidCustomerChannelId!, someAgentExtension);
 
         CallSessionValidationException actualException =
@@ -108,7 +108,7 @@ public partial class AsteriskCallFoundationServiceTests
             new CallSessionValidationException(invalidConnectAgentToQueueRequestException);
 
         // when
-        ValueTask<Channel> connectTask = this.callFoundationService.ConnectAgentToQueueAsync(
+        ValueTask<AgentConnection> connectTask = this.callFoundationService.ConnectAgentToQueueAsync(
             someBridgeId, someCustomerChannelId, invalidAgentExtension!);
 
         CallSessionValidationException actualException =

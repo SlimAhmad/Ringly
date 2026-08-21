@@ -96,16 +96,18 @@ public partial class TwilioCallProvider
         }
     }
 
-    private delegate ValueTask<Channel> ReturningChannelFunction();
+    private delegate ValueTask<AgentConnection> ReturningAgentConnectionFunction();
 
     // Separate TryCatch overload (not the CallSession-returning one above) since
-    // ConnectAgentToQueueAsync returns Channel — same catch ladder and CreateAndLog* helpers,
-    // just one extra validation-exception catch for this routine's own request-shape check.
-    private async ValueTask<Channel> TryCatchChannel(ReturningChannelFunction returningChannelFunction)
+    // ConnectAgentToQueueAsync returns AgentConnection — same catch ladder and CreateAndLog*
+    // helpers, just one extra validation-exception catch for this routine's own request-shape
+    // check.
+    private async ValueTask<AgentConnection> TryCatchAgentConnection(
+        ReturningAgentConnectionFunction returningAgentConnectionFunction)
     {
         try
         {
-            return await returningChannelFunction();
+            return await returningAgentConnectionFunction();
         }
         catch (InvalidConnectAgentToQueueRequestException invalidConnectAgentToQueueRequestException)
         {

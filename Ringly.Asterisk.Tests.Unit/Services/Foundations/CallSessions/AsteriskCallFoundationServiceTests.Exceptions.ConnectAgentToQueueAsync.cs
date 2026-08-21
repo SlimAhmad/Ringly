@@ -26,7 +26,7 @@ public partial class AsteriskCallFoundationServiceTests
                 .ThrowsAsync(httpResponseBadRequestException);
 
         // when
-        ValueTask<Channel> connectTask =
+        ValueTask<AgentConnection> connectTask =
             this.callFoundationService.ConnectAgentToQueueAsync(someBridgeId, someCustomerChannelId, someAgentExtension);
 
         CallSessionDependencyValidationException actualException =
@@ -70,7 +70,7 @@ public partial class AsteriskCallFoundationServiceTests
                 .ThrowsAsync(dependencyException);
 
         // when
-        ValueTask<Channel> connectTask =
+        ValueTask<AgentConnection> connectTask =
             this.callFoundationService.ConnectAgentToQueueAsync(someBridgeId, someCustomerChannelId, someAgentExtension);
 
         CallProviderDependencyException actualException =
@@ -114,7 +114,7 @@ public partial class AsteriskCallFoundationServiceTests
                 .ThrowsAsync(dependencyException);
 
         // when
-        ValueTask<Channel> connectTask =
+        ValueTask<AgentConnection> connectTask =
             this.callFoundationService.ConnectAgentToQueueAsync(someBridgeId, someCustomerChannelId, someAgentExtension);
 
         CallProviderDependencyException actualException =
@@ -155,7 +155,7 @@ public partial class AsteriskCallFoundationServiceTests
                 .ThrowsAsync(exception);
 
         // when
-        ValueTask<Channel> connectTask =
+        ValueTask<AgentConnection> connectTask =
             this.callFoundationService.ConnectAgentToQueueAsync(someBridgeId, someCustomerChannelId, someAgentExtension);
 
         CallProviderServiceException actualException =

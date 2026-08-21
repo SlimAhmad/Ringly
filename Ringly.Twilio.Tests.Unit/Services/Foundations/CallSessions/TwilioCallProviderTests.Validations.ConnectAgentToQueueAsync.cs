@@ -28,7 +28,7 @@ public partial class TwilioCallProviderTests
             new CallSessionValidationException(invalidConnectAgentToQueueRequestException);
 
         // when
-        ValueTask<Channel> connectTask = this.twilioCallProvider.ConnectAgentToQueueAsync(
+        ValueTask<AgentConnection> connectTask = this.twilioCallProvider.ConnectAgentToQueueAsync(
             invalidBridgeId!, someCustomerChannelId, someAgentExtension);
 
         CallSessionValidationException actualException =
@@ -67,7 +67,7 @@ public partial class TwilioCallProviderTests
             new CallSessionValidationException(invalidConnectAgentToQueueRequestException);
 
         // when
-        ValueTask<Channel> connectTask = this.twilioCallProvider.ConnectAgentToQueueAsync(
+        ValueTask<AgentConnection> connectTask = this.twilioCallProvider.ConnectAgentToQueueAsync(
             someBridgeId, invalidCustomerChannelId!, someAgentExtension);
 
         CallSessionValidationException actualException =
@@ -106,7 +106,7 @@ public partial class TwilioCallProviderTests
             new CallSessionValidationException(invalidConnectAgentToQueueRequestException);
 
         // when
-        ValueTask<Channel> connectTask = this.twilioCallProvider.ConnectAgentToQueueAsync(
+        ValueTask<AgentConnection> connectTask = this.twilioCallProvider.ConnectAgentToQueueAsync(
             someBridgeId, someCustomerChannelId, invalidAgentExtension!);
 
         CallSessionValidationException actualException =
