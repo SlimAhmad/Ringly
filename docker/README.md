@@ -140,9 +140,13 @@ Ringly coexist as two independent Stasis applications on the *same* Asterisk PBX
   template; Dograh's own ARI app supplies the real per-call target when it creates the
   `externalMedia` channel. Dograh's external media uses G.711 μ-law, hence `1002`'s
   `allow=ulaw` (endpoints are dynamic/realtime here, row #19b, not static in `pjsip.conf`).
-- **Escalation to a human**: a plain `Dial()`/transfer from within Dograh's own workflow into
-  one of Ringly's queue extensions — an ordinary inbound call from Dograh's side, no code needed
-  on Ringly's.
+- **Escalation to a human**: `POST api/support/escalate?channelId=<id>&queueName=<name>` on
+  `Ringly.Samples.WebApi` — the endpoint Dograh's own tool/function-calling webhook hits when a
+  caller asks for a real person. Confirmed live: Asterisk's ARI supports moving an
+  already-Stasis'd channel to a different app (`POST /channels/{id}/move?app=<dest>`, real and
+  documented since Asterisk 13.26.0/16.3.0) even though it started in Dograh's own `[dograh]` app
+  — this endpoint uses that to pull the channel into Ringly's own Stasis app and drop it in the
+  named queue's holding bridge, same as a customer routed there cold via `POST api/support/{clientId}/route`.
 
 ### One-time dashboard setup
 

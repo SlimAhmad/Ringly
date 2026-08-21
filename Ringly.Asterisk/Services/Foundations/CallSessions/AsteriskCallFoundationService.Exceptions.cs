@@ -35,6 +35,10 @@ public partial class AsteriskCallFoundationService
         {
             throw await CreateAndLogValidationException(notFoundQueueException);
         }
+        catch (InvalidEscalateToQueueRequestException invalidEscalateToQueueRequestException)
+        {
+            throw await CreateAndLogValidationException(invalidEscalateToQueueRequestException);
+        }
         catch (HttpResponseBadRequestException)
         {
             var invalidCallParticipantException = new InvalidCallParticipantException();
