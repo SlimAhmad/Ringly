@@ -12,9 +12,9 @@ public partial class TwilioCallProvider
     // the Asterisk side to move the customer out of a non-mixing holding bridge — see that
     // provider's own comment) isn't needed here: Twilio conferences always mix every participant
     // by default, no separate "holding" bridge type exists to work around.
-    public ValueTask<Channel> ConnectAgentToQueueAsync(
+    public ValueTask<AgentConnection> ConnectAgentToQueueAsync(
         string bridgeId, string customerChannelId, string agentExtension) =>
-    TryCatchChannel(async () =>
+    TryCatchAgentConnection(async () =>
     {
         ValidateConnectAgentToQueueRequest(bridgeId, customerChannelId, agentExtension);
 
@@ -24,6 +24,6 @@ public partial class TwilioCallProvider
             From = this.twilioOptions.DefaultCallerId
         });
 
-        return new Channel { ChannelId = participant.CallSid };
+        return new AgentConnection { AgentChannelId = participant.CallSid, BridgeId = bridgeId };
     });
 }

@@ -21,6 +21,10 @@ public partial interface ICallProvider
     // (bridgeId is CallSession.BridgeId, customerChannelId is CallSession.CustomerChannelId, both
     // from the RouteToQueueAsync call that put the customer there) — the counterpart that
     // actually connects the two sides once an agent claims a waiting customer, rather than
-    // leaving them on hold indefinitely.
-    ValueTask<Channel> ConnectAgentToQueueAsync(string bridgeId, string customerChannelId, string agentExtension);
+    // leaving them on hold indefinitely. Returns AgentConnection rather than a bare Channel: the
+    // bridge actually carrying audio afterward isn't always the same one passed in (Asterisk's
+    // implementation creates a fresh mixing bridge internally), so callers need the real one back
+    // — confirmed live as a bug when it wasn't: callers kept reporting the original holding
+    // bridge, which downstream consumers (e.g. call recording) then pointed at an empty bridge.
+    ValueTask<AgentConnection> ConnectAgentToQueueAsync(string bridgeId, string customerChannelId, string agentExtension);
 }

@@ -30,12 +30,18 @@ public partial class AsteriskCallFoundationServiceTests
             broker.InsertBridgeAsync("mixing"))
                 .ReturnsAsync(someTalkBridge);
 
+        var expectedAgentConnection = new AgentConnection
+        {
+            AgentChannelId = someAgentChannel.ChannelId,
+            BridgeId = someTalkBridge.Id
+        };
+
         // when
-        Channel actualChannel = await this.callFoundationService.ConnectAgentToQueueAsync(
+        AgentConnection actualAgentConnection = await this.callFoundationService.ConnectAgentToQueueAsync(
             someBridgeId, someCustomerChannelId, someAgentExtension);
 
         // then
-        actualChannel.Should().BeEquivalentTo(someAgentChannel);
+        actualAgentConnection.Should().BeEquivalentTo(expectedAgentConnection);
 
         this.asteriskBrokerMock.Verify(broker =>
             broker.InsertChannelAsync($"PJSIP/{someAgentExtension}"),

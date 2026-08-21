@@ -27,7 +27,7 @@ public partial class TwilioCallProviderTests
                 .ThrowsAsync(httpResponseBadRequestException);
 
         // when
-        ValueTask<Channel> connectTask =
+        ValueTask<AgentConnection> connectTask =
             this.twilioCallProvider.ConnectAgentToQueueAsync(someBridgeId, someCustomerChannelId, someAgentExtension);
 
         CallSessionDependencyValidationException actualException =
@@ -69,7 +69,7 @@ public partial class TwilioCallProviderTests
                 .ThrowsAsync(httpResponseUnauthorizedException);
 
         // when
-        ValueTask<Channel> connectTask =
+        ValueTask<AgentConnection> connectTask =
             this.twilioCallProvider.ConnectAgentToQueueAsync(someBridgeId, someCustomerChannelId, someAgentExtension);
 
         CallProviderDependencyException actualException =
@@ -109,7 +109,7 @@ public partial class TwilioCallProviderTests
                 .ThrowsAsync(exception);
 
         // when
-        ValueTask<Channel> connectTask =
+        ValueTask<AgentConnection> connectTask =
             this.twilioCallProvider.ConnectAgentToQueueAsync(someBridgeId, someCustomerChannelId, someAgentExtension);
 
         CallProviderServiceException actualException =
