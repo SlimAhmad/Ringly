@@ -18,6 +18,13 @@ public class RecordingApiBroker : IRecordingApiBroker
     public async ValueTask<IReadOnlyList<RecordingRow>> GetRecordingsAsync() =>
         await this.apiClient.GetContentAsync<List<RecordingRow>>(relativeUrl: "api/recordings");
 
+    // The blobUrl already on each RecordingRow isn't directly playable — the container is
+    // private (confirmed live: a plain GET on it returns 403 AuthorizationFailure) — this asks
+    // RecordingsController for a real, time-limited signed download URL instead.
+    public async ValueTask<Uri> GetAccessUrlAsync(string recordingName) =>
+        await this.apiClient.GetContentAsync<Uri>(
+            relativeUrl: $"api/recordings/{Uri.EscapeDataString(recordingName)}/access-url");
+
     public async ValueTask PostRecordingAsync(string bridgeId, string recordingName, string format) =>
         await this.apiClient.PostContentAsync<object, object>(
             relativeUrl: "api/recordings",

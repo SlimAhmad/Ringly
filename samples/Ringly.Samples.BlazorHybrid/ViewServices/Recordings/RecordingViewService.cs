@@ -1,3 +1,4 @@
+using Microsoft.JSInterop;
 using Ringly.Samples.BlazorHybrid.Brokers.Apis;
 using Ringly.Samples.BlazorHybrid.Models.Recordings;
 using Ringly.Samples.BlazorHybrid.ViewServices.Agents;
@@ -8,6 +9,7 @@ public sealed class RecordingViewService : IRecordingViewService
 {
     private readonly IRecordingApiBroker recordingApiBroker;
     private readonly IAgentConsoleViewService agentConsoleViewService;
+    private readonly IJSRuntime jsRuntime;
     private List<RecordingRow> recordings = [];
 
     public event Action? StateChanged;
@@ -26,10 +28,13 @@ public sealed class RecordingViewService : IRecordingViewService
     public IReadOnlyList<RecordingRow> Recordings => this.recordings;
 
     public RecordingViewService(
-        IRecordingApiBroker recordingApiBroker, IAgentConsoleViewService agentConsoleViewService)
+        IRecordingApiBroker recordingApiBroker,
+        IAgentConsoleViewService agentConsoleViewService,
+        IJSRuntime jsRuntime)
     {
         this.recordingApiBroker = recordingApiBroker;
         this.agentConsoleViewService = agentConsoleViewService;
+        this.jsRuntime = jsRuntime;
 
         // Picks up a fresh CurrentBridgeId reactively whenever the agent claims a new call, so
         // this panel's "no active call" state clears itself without the operator needing to
@@ -91,6 +96,30 @@ public sealed class RecordingViewService : IRecordingViewService
 
     public ValueTask RemoveAsync(string recordingName) =>
         this.RunActionAsync(recordingName, this.recordingApiBroker.DeleteRecordingAsync, "Removed");
+
+    // The BlobUrl already on each RecordingRow isn't directly playable — the container is
+    // private, so this resolves a real signed URL first (see RecordingApiBroker's own comment)
+    // and hands it to the platform to actually open, rather than rendering the raw BlobUrl as a
+    // link the way this panel did before.
+    public async ValueTask PlayAsync(string recordingName)
+    {
+        this.IsBusy = true;
+        this.OnStateChanged();
+
+        try
+        {
+            Uri accessUrl = await this.recordingApiBroker.GetAccessUrlAsync(recordingName);
+            await this.jsRuntime.InvokeVoidAsync("open", accessUrl.ToString(), "_blank");
+        }
+        catch (Exception exception)
+        {
+            this.StatusMessage = $"Play failed: {exception.Message}";
+            this.StatusMessageColorClass = "text-red-400";
+        }
+
+        this.IsBusy = false;
+        this.OnStateChanged();
+    }
 
     private async ValueTask RunActionAsync(
         string recordingName, Func<string, ValueTask> action, string successVerb)
