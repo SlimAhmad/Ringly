@@ -195,6 +195,17 @@ services:
     environment:
       ENVIRONMENT: local
       LOG_LEVEL: INFO
+      # Left at its default (localhost), api/utils/common.py's is_local_or_private_url()
+      # classifies it as "not publicly reachable" and, on every single health check,
+      # api/utils/tunnel.py tries a 5s-timeout lookup against a "cloudflared" service we
+      # don't run — confirmed live, this made /api/v1/health consistently take ~4s and
+      # trip the dograh-ui dashboard's own client-side health-check timeout ("Backend
+      # connection failed"), even though the backend was actually up the whole time.
+      # Any hostname other than literally "localhost" (or a parseable IP) is treated as
+      # publicly reachable by that same check and skips the lookup — the Docker service
+      # name works and needs no real public exposure for local dev, since nothing here
+      # relies on BACKEND_API_ENDPOINT for actual inbound webhook delivery.
+      BACKEND_API_ENDPOINT: http://dograh-api:8000
       DATABASE_URL: postgresql+asyncpg://postgres:dograh-dev-postgres@dograh-postgres:5432/postgres
       REDIS_URL: redis://:dograh-dev-redis@dograh-redis:6379
       MINIO_ENDPOINT: dograh-minio:9000
