@@ -20,20 +20,20 @@ public class RecordingFinalizer : BackgroundService
     private const string StoppedState = "stopped";
 
     private readonly IAsteriskBroker asteriskBroker;
-    private readonly IRecordingService recordingService;
+    private readonly IServiceScopeFactory serviceScopeFactory;
     private readonly IRecordingStorageProvider recordingStorageProvider;
     private readonly RecordingSpoolOptions recordingSpoolOptions;
     private readonly ILogger<RecordingFinalizer> logger;
 
     public RecordingFinalizer(
         IAsteriskBroker asteriskBroker,
-        IRecordingService recordingService,
+        IServiceScopeFactory serviceScopeFactory,
         IRecordingStorageProvider recordingStorageProvider,
         IOptions<RecordingSpoolOptions> recordingSpoolOptions,
         ILogger<RecordingFinalizer> logger)
     {
         this.asteriskBroker = asteriskBroker;
-        this.recordingService = recordingService;
+        this.serviceScopeFactory = serviceScopeFactory;
         this.recordingStorageProvider = recordingStorageProvider;
         this.recordingSpoolOptions = recordingSpoolOptions.Value;
         this.logger = logger;
@@ -66,8 +66,18 @@ public class RecordingFinalizer : BackgroundService
 
     private async Task HandleRecordingFinishedAsync(RecordingFinishedEvent recordingFinishedEvent)
     {
+        // IRecordingService is Scoped (it ultimately depends on IStorageBroker, a DbContext) —
+        // this service is a Singleton hosted service, so a scope is created per event rather than
+        // holding the dependency directly, the standard pattern for accessing Scoped services from
+        // a Singleton (same as TelephonyCallTrackingService's own comment on this exact problem;
+        // confirmed live: consuming it directly here throws at startup — "Cannot consume scoped
+        // service ... from singleton").
+        using IServiceScope scope = this.serviceScopeFactory.CreateScope();
+
+        IRecordingService recordingService = scope.ServiceProvider.GetRequiredService<IRecordingService>();
+
         Recording? recording =
-            await this.recordingService.RetrieveRecordingByNameAsync(recordingFinishedEvent.RecordingName);
+            await recordingService.RetrieveRecordingByNameAsync(recordingFinishedEvent.RecordingName);
 
         if (recording is null || !string.IsNullOrEmpty(recording.BlobUrl))
         {
@@ -80,7 +90,7 @@ public class RecordingFinalizer : BackgroundService
         {
             // "failed"/"canceled" — no complete audio file to upload, just reflect the real state.
             recording.State = recordingFinishedEvent.State;
-            await this.recordingService.ModifyRecordingAsync(recording);
+            await recordingService.ModifyRecordingAsync(recording);
             return;
         }
 
@@ -92,6 +102,6 @@ public class RecordingFinalizer : BackgroundService
 
         recording.State = StoppedState;
         recording.BlobUrl = uploadedUri.ToString();
-        await this.recordingService.ModifyRecordingAsync(recording);
+        await recordingService.ModifyRecordingAsync(recording);
     }
 }
