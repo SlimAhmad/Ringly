@@ -1,3 +1,6 @@
+using System.Reactive.Linq;
+using System.Text.Json;
+using Ringly.Abstractions.Models;
 using Ringly.Asterisk.Models;
 
 namespace Ringly.Asterisk.Brokers;
@@ -7,6 +10,7 @@ public partial class AsteriskBroker
     private const string BridgesRecordRelativeUrlFormat = "bridges/{0}/record";
     private const string LiveRecordingsRelativeUrlFormat = "recordings/live/{0}";
     private const string StoredRecordingsRelativeUrlFormat = "recordings/stored/{0}";
+    private const string RecordingFinishedEventType = "RecordingFinished";
 
     public async ValueTask<LiveRecording> InsertRecordingAsync(
         string bridgeId,
@@ -17,6 +21,26 @@ public partial class AsteriskBroker
 
         return await this.PostAsync<LiveRecording>(
             $"{relativeUrl}?name={Uri.EscapeDataString(recordingName)}&format={Uri.EscapeDataString(format)}");
+    }
+
+    // Fires whenever a live recording ends, by explicit Stop/Cancel OR because the bridge it was
+    // on got torn down (e.g. the call just hung up) — confirmed against ARI's own RecordingFinished
+    // event, not guessed. This is what lets RecordingFinalizer catch the "call ended on its own"
+    // case, which an explicit HTTP stop call alone never would.
+    public IObservable<RecordingFinishedEvent> StreamRecordingFinishedEvents() =>
+        this.ariEvents
+            .Where(ariEvent => IsEventType(ariEvent, RecordingFinishedEventType))
+            .Select(MapToRecordingFinishedEvent);
+
+    private static RecordingFinishedEvent MapToRecordingFinishedEvent(JsonElement ariEvent)
+    {
+        JsonElement recording = ariEvent.GetProperty("recording");
+
+        return new RecordingFinishedEvent
+        {
+            RecordingName = recording.GetProperty("name").GetString() ?? string.Empty,
+            State = recording.GetProperty("state").GetString() ?? string.Empty
+        };
     }
 
     public async ValueTask PauseRecordingAsync(string recordingName) =>

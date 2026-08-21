@@ -94,6 +94,11 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<RideHailingCallRou
 // own comment for why this is a separate service rather than folded into RideHailingCallRouter.
 builder.Services.AddHostedService<TelephonyCallTrackingService>();
 
+// Uploads a recording to blob storage once it actually finishes, whether by explicit Stop or
+// because the call just hung up on its own — see RecordingFinalizer's own comment for why this
+// replaced the upload logic that used to live inline in RecordingsController.PostStopAsync.
+builder.Services.AddHostedService<RecordingFinalizer>();
+
 var app = builder.Build();
 
 // Moved out of StorageBroker's own constructor — a DbContext constructor calling Database.Migrate()

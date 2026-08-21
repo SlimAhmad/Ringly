@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 using RESTFulSense.Controllers;
 using Ringly.CallCenter.Abstractions;
 using Ringly.CallCenter.Abstractions.Models;
@@ -16,23 +15,41 @@ public class RecordingsController : RESTFulController
     private readonly ICallCenterProvider callCenterProvider;
     private readonly IRecordingService recordingService;
     private readonly IRecordingStorageProvider recordingStorageProvider;
-    private readonly RecordingSpoolOptions recordingSpoolOptions;
 
     public RecordingsController(
         ICallCenterProvider callCenterProvider,
         IRecordingService recordingService,
-        IRecordingStorageProvider recordingStorageProvider,
-        IOptions<RecordingSpoolOptions> recordingSpoolOptions)
+        IRecordingStorageProvider recordingStorageProvider)
     {
         this.callCenterProvider = callCenterProvider;
         this.recordingService = recordingService;
         this.recordingStorageProvider = recordingStorageProvider;
-        this.recordingSpoolOptions = recordingSpoolOptions.Value;
     }
 
     [HttpGet]
     public async ValueTask<ActionResult<IQueryable<Models.Foundations.Recordings.Recording>>> GetRecordingsAsync() =>
         this.Ok(await this.recordingService.RetrieveAllRecordingsAsync());
+
+    // The blobUrl already returned by GetRecordingsAsync isn't directly playable — the container
+    // is private (confirmed live: a plain GET on it returns 403 AuthorizationFailure), so a real
+    // caller needs a signed, time-limited URL instead. IRecordingStorageProvider already had
+    // GenerateTemporaryAccessUrlAsync built for exactly this; it just had no endpoint exposing it.
+    [HttpGet("{recordingName}/access-url")]
+    public async ValueTask<ActionResult<Uri>> GetAccessUrlAsync(
+        string recordingName, [FromQuery] int expiryMinutes = 60)
+    {
+        try
+        {
+            Uri accessUrl = await this.recordingStorageProvider.GenerateTemporaryAccessUrlAsync(
+                recordingName, TimeSpan.FromMinutes(expiryMinutes));
+
+            return this.Ok(accessUrl);
+        }
+        catch (Exception exception)
+        {
+            return this.HandleRecordingException(exception);
+        }
+    }
 
     [HttpPost]
     public async ValueTask<ActionResult<RecordingInfo>> PostRecordingAsync(InsertRecordingRequest request)
@@ -93,33 +110,17 @@ public class RecordingsController : RESTFulController
         }
     }
 
+    // Only tells Asterisk to stop — the actual upload-to-blob-storage + state/BlobUrl update now
+    // happens in RecordingFinalizer, reacting to ARI's own RecordingFinished event instead of
+    // living here. That event fires for this explicit stop AND for a call that just hangs up on
+    // its own (confirmed live: the latter previously left recordings permanently un-uploaded,
+    // since nothing here was reachable if the client never got a chance to call this action).
     [HttpPost("{recordingName}/stop")]
     public async ValueTask<ActionResult> PostStopAsync(string recordingName)
     {
         try
         {
             await this.callCenterProvider.StopRecordingAsync(recordingName);
-
-            // The file is only finalized on disk once ARI's own stop call above returns — reading
-            // it any earlier would race a partially-written file. Uploading the actual bytes (not
-            // just flipping a status flag) is what makes this recording durable and downloadable
-            // beyond Asterisk's own local, ephemeral spool directory.
-            Models.Foundations.Recordings.Recording? recording =
-                await this.recordingService.RetrieveRecordingByNameAsync(recordingName);
-
-            if (recording is not null)
-            {
-                string localFilePath = Path.Combine(
-                    this.recordingSpoolOptions.Directory, $"{recordingName}.{recording.Format}");
-
-                Uri uploadedUri = await this.recordingStorageProvider.UploadRecordingAsync(
-                    localFilePath, recordingName);
-
-                recording.State = "stopped";
-                recording.BlobUrl = uploadedUri.ToString();
-                await this.recordingService.ModifyRecordingAsync(recording);
-            }
-
             return this.Ok();
         }
         catch (Exception exception)
