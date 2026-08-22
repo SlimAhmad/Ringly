@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using RESTFulSense.Controllers;
 using Ringly.Abstractions;
@@ -113,28 +114,47 @@ public class SupportController : RESTFulController
         }
     }
 
+    private const string DefaultDepartment = "support";
+
+    // Only lowercase letters — matches extensions.conf's own _[a-z]. dialplan pattern intent, and
+    // guards against an external caller (Dograh's own backend, not directly user-controlled, but
+    // still a network boundary) injecting "@"/"/" or other characters into a raw Asterisk dial
+    // string built from this value.
+    private static readonly Regex DepartmentPattern = new("^[a-z]+$", RegexOptions.Compiled);
+
     // Dograh's native "Call Transfer" tool's Dynamic HTTP Resolver
     // (docs.dograh.com/voice-agent/tools/call-transfer) — replaces the raw ARI /channels/{id}/move
     // approach (PostEscalateAsync above), which turned out to make Dograh's own app hang the call
     // up defensively the instant it noticed the channel disappear from its Stasis app. Dograh
-    // POSTs a flat JSON object of whatever LLM/preset parameters its tool config sends (none
-    // needed here — there is currently only one destination) and expects back
-    // transfer_context.destination as a real SIP endpoint string; Dograh itself then dials that
-    // destination and manages the transfer, so this is pure mapping with no service call at all.
-    // "Local/9000@ride_hailing" is a plain Asterisk dial string (no PJSIP endpoint/AOR needed —
-    // confirmed live that a static AOR contact pointing at a Local channel is rejected outright by
-    // res_pjsip, which only accepts genuine sip(s): URIs there) that lands directly in
-    // extensions.conf's own [ride_hailing] dialplan, which RideHailingCallRouter special-cases to
-    // bridge straight into the support queue. Unconfirmed whether Dograh's own tool validation
-    // accepts a "Local/..." destination at all (its docs only give PJSIP/SIP examples) — needs a
-    // live test.
+    // POSTs a flat JSON object of whatever LLM/preset parameters its tool config sends — configure
+    // an LLM parameter named "department" (e.g. extracted from the conversation as "support" or
+    // "billing") to route to that queue by name; falls back to "support" if missing or if the
+    // value doesn't look like a real queue name, rather than handing Asterisk an unvalidated dial
+    // string. Expects back transfer_context.destination as a real SIP endpoint string; Dograh
+    // itself then dials that destination and manages the transfer, so this is pure mapping with no
+    // service call needed — RideHailingCallRouter is what actually validates the department
+    // against IQueueRegistry once the dialed channel reaches it.
+    // "Local/{department}@ride_hailing" is a plain Asterisk dial string (no PJSIP endpoint/AOR
+    // needed — confirmed live that a static AOR contact pointing at a Local channel is rejected
+    // outright by res_pjsip, which only accepts genuine sip(s): URIs there) that lands directly in
+    // extensions.conf's own [ride_hailing] dialplan. Unconfirmed whether Dograh's own tool
+    // validation accepts a "Local/..." destination at all (its docs only give PJSIP/SIP examples)
+    // — needs a live test.
     [HttpPost("dograh-transfer-resolver")]
     public ActionResult<DograhTransferResolverResponse> PostDograhTransferResolverAsync(
-        [FromBody] Dictionary<string, object> request) =>
-        this.Ok(new DograhTransferResolverResponse(
+        [FromBody] Dictionary<string, object> request)
+    {
+        string department = request.TryGetValue("department", out object? value)
+            && value?.ToString() is string requestedDepartment
+            && DepartmentPattern.IsMatch(requestedDepartment)
+                ? requestedDepartment
+                : DefaultDepartment;
+
+        return this.Ok(new DograhTransferResolverResponse(
             new DograhTransferContext(
-                Destination: "Local/9000@ride_hailing",
+                Destination: $"Local/{department}@ride_hailing",
                 CustomMessage: "Connecting you to a support agent now.")));
+    }
 }
 
 public record EscalateToQueueRequest(string ChannelId, string QueueName);

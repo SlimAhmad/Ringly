@@ -22,12 +22,6 @@ public class RideHailingCallRouter : BackgroundService, ICallLifecycleEventSourc
     private const string MixingBridgeType = "mixing";
     private const string UpChannelState = "Up";
 
-    // Row #38d — the extension Dograh's native Call Transfer tool dials (see extensions.conf's
-    // own comment on the "9000" extension for the full reasoning). Not a real callee to dial;
-    // OnStasisStart special-cases it below instead of treating it like any other _X. extension.
-    private const string DograhTransferExtension = "9000";
-    private const string SupportQueueName = "support";
-
     private readonly IAsteriskBroker asteriskBroker;
     private readonly IServiceScopeFactory serviceScopeFactory;
     private readonly ILogger<RideHailingCallRouter> logger;
@@ -175,9 +169,8 @@ public class RideHailingCallRouter : BackgroundService, ICallLifecycleEventSourc
 
         string targetExtension = stasisStartEvent.Args[0];
 
-        if (targetExtension == DograhTransferExtension)
+        if (await this.TryHandleQueueTransferAsync(stasisStartEvent.ChannelId, targetExtension))
         {
-            await this.HandleDograhTransferAsync(stasisStartEvent.ChannelId);
             return;
         }
 
@@ -209,33 +202,31 @@ public class RideHailingCallRouter : BackgroundService, ICallLifecycleEventSourc
         this.callIdByChannelId[targetChannel.ChannelId] = stasisStartEvent.ChannelId;
     }
 
-    // Row #38d — a fresh channel Dograh's own Call Transfer tool dialed (PJSIP/9000, resolved to
-    // a static Local-channel contact so it lands here rather than requiring a real registered
-    // device), not one being moved mid-flight — so none of EscalateToQueueAsync's ARI /move race
-    // with Dograh's own app applies. IQueueRegistry is Scoped; this class is a singleton
-    // BackgroundService, so a fresh scope is created per event rather than injecting it directly
-    // (same DI-lifetime fix as RecordingFinalizer).
-    private async Task HandleDograhTransferAsync(string channelId)
+    // Row #38d — lets Dograh's native Call Transfer tool target any department/queue by name
+    // (e.g. "support", "billing") without a dialplan edit per department: extensions.conf's
+    // _[a-z]. pattern hands any letter-started extension here, and this checks whether it's a
+    // real registered queue before falling through to a normal callee-dial. A fresh channel
+    // Dograh's own tool dials itself (never one being moved mid-flight), so none of
+    // EscalateToQueueAsync's ARI /move race with Dograh's own app applies. IQueueRegistry is
+    // Scoped; this class is a singleton BackgroundService, so a fresh scope is created per event
+    // rather than injecting it directly (same DI-lifetime fix as RecordingFinalizer). Real callee
+    // extensions (1000-1004, 1002) are all digit-only and already handled by the _X. pattern
+    // above, which never reaches this method — so there's no ambiguity between "a queue name" and
+    // "a real callee extension" in practice, despite this checking every targetExtension.
+    private async Task<bool> TryHandleQueueTransferAsync(string channelId, string targetExtension)
     {
-        await this.asteriskBroker.AnswerChannelAsync(channelId);
-
         using IServiceScope scope = this.serviceScopeFactory.CreateScope();
         IQueueRegistry queueRegistry = scope.ServiceProvider.GetRequiredService<IQueueRegistry>();
-        HoldingBridge? holdingBridge = await queueRegistry.RetrieveByNameAsync(SupportQueueName);
+        HoldingBridge? holdingBridge = await queueRegistry.RetrieveByNameAsync(targetExtension);
 
         if (holdingBridge is null)
         {
-            this.logger.LogError(
-                "Dograh call-transfer target channel {ChannelId} could not be routed: " +
-                "no '{QueueName}' queue is registered.",
-                channelId,
-                SupportQueueName);
-
-            await this.asteriskBroker.HangupChannelAsync(channelId);
-            return;
+            return false;
         }
 
+        await this.asteriskBroker.AnswerChannelAsync(channelId);
         await this.asteriskBroker.AddChannelToBridgeAsync(holdingBridge.BridgeId, channelId);
+        return true;
     }
 
     private async Task HandleStasisEndAsync(StasisEndEvent stasisEndEvent)
