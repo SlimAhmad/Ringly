@@ -121,16 +121,19 @@ public class SupportController : RESTFulController
     // needed here — there is currently only one destination) and expects back
     // transfer_context.destination as a real SIP endpoint string; Dograh itself then dials that
     // destination and manages the transfer, so this is pure mapping with no service call at all.
-    // "PJSIP/9000" resolves to a static Local-channel contact (see
-    // docker/asterisk/seed-test-endpoint.sql) that lands in extensions.conf's own
-    // [ride_hailing] dialplan, which RideHailingCallRouter special-cases to bridge straight into
-    // the support queue.
+    // "Local/9000@ride_hailing" is a plain Asterisk dial string (no PJSIP endpoint/AOR needed —
+    // confirmed live that a static AOR contact pointing at a Local channel is rejected outright by
+    // res_pjsip, which only accepts genuine sip(s): URIs there) that lands directly in
+    // extensions.conf's own [ride_hailing] dialplan, which RideHailingCallRouter special-cases to
+    // bridge straight into the support queue. Unconfirmed whether Dograh's own tool validation
+    // accepts a "Local/..." destination at all (its docs only give PJSIP/SIP examples) — needs a
+    // live test.
     [HttpPost("dograh-transfer-resolver")]
     public ActionResult<DograhTransferResolverResponse> PostDograhTransferResolverAsync(
         [FromBody] Dictionary<string, object> request) =>
         this.Ok(new DograhTransferResolverResponse(
             new DograhTransferContext(
-                Destination: "PJSIP/9000",
+                Destination: "Local/9000@ride_hailing",
                 CustomMessage: "Connecting you to a support agent now.")));
 }
 
