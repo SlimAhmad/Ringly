@@ -17,6 +17,15 @@ public partial interface ICallProvider
     // Ringly customerId, since Ringly has no customer record for a call it didn't originate.
     ValueTask<CallSession> EscalateToQueueAsync(string channelId, string queueName);
 
+    // Same escalation as EscalateToQueueAsync, but keyed by the caller's own phone number rather
+    // than the provider-native channel id — for an external AI agent whose tool-calling mechanism
+    // never exposes the live channel id to the tool itself (confirmed against Dograh's own
+    // support: "the telephony channel ID isn't sent" to a tool call; only caller_number/
+    // called_number are automatically available). Implementations resolve the live call
+    // themselves from whatever identifies an in-progress call by caller number in their own
+    // provider (e.g. Asterisk ARI's channel list, Twilio's in-progress Calls list).
+    ValueTask<CallSession> EscalateToQueueByCallerNumberAsync(string callerNumber, string queueName);
+
     // Bridges a claiming agent's own channel into an already-held customer's bridge/conference
     // (bridgeId is CallSession.BridgeId, customerChannelId is CallSession.CustomerChannelId, both
     // from the RouteToQueueAsync call that put the customer there) — the counterpart that
