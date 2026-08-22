@@ -35,6 +35,10 @@ public partial class AsteriskCallFoundationService
         {
             throw await CreateAndLogValidationException(notFoundQueueException);
         }
+        catch (NotFoundChannelException notFoundChannelException)
+        {
+            throw await CreateAndLogValidationException(notFoundChannelException);
+        }
         catch (InvalidEscalateToQueueRequestException invalidEscalateToQueueRequestException)
         {
             throw await CreateAndLogValidationException(invalidEscalateToQueueRequestException);

@@ -35,6 +35,10 @@ public partial class TwilioCallProvider
         {
             throw await CreateAndLogValidationException(invalidEscalateToQueueRequestException);
         }
+        catch (NotFoundChannelException notFoundChannelException)
+        {
+            throw await CreateAndLogValidationException(notFoundChannelException);
+        }
         catch (HttpResponseBadRequestException)
         {
             var invalidCallParticipantException = new InvalidCallParticipantException();

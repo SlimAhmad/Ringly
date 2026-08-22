@@ -24,4 +24,25 @@ public partial class AsteriskCallFoundationService
 
         invalidEscalateToQueueRequestException.ThrowIfContainsErrors();
     }
+
+    private static void ValidateEscalateToQueueByCallerNumberRequest(string callerNumber, string queueName)
+    {
+        var invalidEscalateToQueueRequestException = new InvalidEscalateToQueueRequestException();
+
+        if (string.IsNullOrWhiteSpace(callerNumber))
+        {
+            invalidEscalateToQueueRequestException.UpsertDataList(
+                key: nameof(callerNumber),
+                value: "Value is required");
+        }
+
+        if (string.IsNullOrWhiteSpace(queueName))
+        {
+            invalidEscalateToQueueRequestException.UpsertDataList(
+                key: nameof(queueName),
+                value: "Value is required");
+        }
+
+        invalidEscalateToQueueRequestException.ThrowIfContainsErrors();
+    }
 }

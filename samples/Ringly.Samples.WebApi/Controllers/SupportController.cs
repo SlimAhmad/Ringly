@@ -111,6 +111,50 @@ public class SupportController : RESTFulController
             return this.InternalServerError(callProviderServiceException);
         }
     }
+
+    // Same escalation as PostEscalateAsync above, but for an external AI agent whose tool call
+    // never has the live channel id available to it — confirmed against Dograh's own support:
+    // the ARI channel id "isn't sent" to a tool call mid-call, only caller_number/called_number
+    // are automatically available. Dograh's escalate tool is configured to send caller_number
+    // instead of a channel id for this reason.
+    [HttpPost("escalate-by-caller-number")]
+    public async ValueTask<ActionResult<CallSession>> PostEscalateByCallerNumberAsync(
+        [FromBody] EscalateToQueueByCallerNumberRequest request)
+    {
+        try
+        {
+            CallSession session = await this.callProvider.EscalateToQueueByCallerNumberAsync(
+                request.CallerNumber, request.QueueName);
+
+            this.supportQueueBroadcastRegistry.PublishWaitingCustomer(
+                Guid.NewGuid(), request.QueueName, session.CustomerChannelId, session.BridgeId);
+
+            return this.Created(value: session);
+        }
+        catch (CallSessionValidationException callSessionValidationException)
+            when (callSessionValidationException.InnerException is NotFoundQueueException
+                or NotFoundChannelException)
+        {
+            return this.NotFound(callSessionValidationException.InnerException);
+        }
+        catch (CallSessionValidationException callSessionValidationException)
+        {
+            return this.BadRequest(callSessionValidationException.InnerException);
+        }
+        catch (CallSessionDependencyValidationException callSessionDependencyValidationException)
+        {
+            return this.BadRequest(callSessionDependencyValidationException.InnerException);
+        }
+        catch (CallProviderDependencyException callProviderDependencyException)
+        {
+            return this.InternalServerError(callProviderDependencyException);
+        }
+        catch (CallProviderServiceException callProviderServiceException)
+        {
+            return this.InternalServerError(callProviderServiceException);
+        }
+    }
 }
 
 public record EscalateToQueueRequest(string ChannelId, string QueueName);
+public record EscalateToQueueByCallerNumberRequest(string CallerNumber, string QueueName);

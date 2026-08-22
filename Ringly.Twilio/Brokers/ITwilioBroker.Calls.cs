@@ -7,4 +7,5 @@ public partial interface ITwilioBroker
     ValueTask<Channel> InsertCallAsync(string to, string from, string twiml);
     ValueTask RedirectCallAsync(string callSid, string twiml);
     ValueTask HangupCallAsync(string callSid);
+    ValueTask<string?> RetrieveCallSidByCallerNumberAsync(string callerNumber);
 }

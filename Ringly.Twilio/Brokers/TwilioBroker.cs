@@ -89,4 +89,10 @@ public partial class TwilioBroker : ITwilioBroker
             relativeUrl: relativeUrl,
             cancellationToken: CancellationToken.None,
             deserailizationFunction: PassThroughDeserialization);
+
+    private async ValueTask<T> GetAsync<T>(string relativeUrl) =>
+        await this.apiClient.SendHttpRequestAsync<T>(
+            method: "GET",
+            relativeUrl: relativeUrl,
+            cancellationToken: CancellationToken.None);
 }
