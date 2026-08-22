@@ -24,6 +24,7 @@ public class RideHailingCallRouter : BackgroundService, ICallLifecycleEventSourc
 
     private readonly IAsteriskBroker asteriskBroker;
     private readonly IServiceScopeFactory serviceScopeFactory;
+    private readonly SupportQueueBroadcastRegistry supportQueueBroadcastRegistry;
     private readonly ILogger<RideHailingCallRouter> logger;
 
     // Tracks channels this router originated itself (the callee leg) so the caller's leg isn't
@@ -73,10 +74,12 @@ public class RideHailingCallRouter : BackgroundService, ICallLifecycleEventSourc
     public RideHailingCallRouter(
         IAsteriskBroker asteriskBroker,
         IServiceScopeFactory serviceScopeFactory,
+        SupportQueueBroadcastRegistry supportQueueBroadcastRegistry,
         ILogger<RideHailingCallRouter> logger)
     {
         this.asteriskBroker = asteriskBroker;
         this.serviceScopeFactory = serviceScopeFactory;
+        this.supportQueueBroadcastRegistry = supportQueueBroadcastRegistry;
         this.logger = logger;
     }
 
@@ -213,6 +216,13 @@ public class RideHailingCallRouter : BackgroundService, ICallLifecycleEventSourc
     // extensions (1000-1004, 1002) are all digit-only and already handled by the _X. pattern
     // above, which never reaches this method — so there's no ambiguity between "a queue name" and
     // "a real callee extension" in practice, despite this checking every targetExtension.
+    //
+    // Confirmed as a real gap otherwise: without publishing here, a customer bridged straight into
+    // a queue's holding bridge this way would sit on hold indefinitely with no agent ever notified
+    // - SupportQueueBroadcastRegistry.PublishWaitingCustomer is the ONLY thing the agent console's
+    // waiting-customer list and AgentsController's claim flow listen to; RouteToQueueAsync/
+    // EscalateToQueueAsync's own callers (SupportController) already call it themselves, but this
+    // router bridges the channel directly with no controller action in between to do that.
     private async Task<bool> TryHandleQueueTransferAsync(string channelId, string targetExtension)
     {
         using IServiceScope scope = this.serviceScopeFactory.CreateScope();
@@ -226,6 +236,9 @@ public class RideHailingCallRouter : BackgroundService, ICallLifecycleEventSourc
 
         await this.asteriskBroker.AnswerChannelAsync(channelId);
         await this.asteriskBroker.AddChannelToBridgeAsync(holdingBridge.BridgeId, channelId);
+
+        this.supportQueueBroadcastRegistry.PublishWaitingCustomer(
+            Guid.NewGuid(), targetExtension, channelId, holdingBridge.BridgeId);
         return true;
     }
 
