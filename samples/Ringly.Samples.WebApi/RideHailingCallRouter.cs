@@ -1,9 +1,12 @@
 using System.Collections.Concurrent;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using Microsoft.Extensions.DependencyInjection;
 using Ringly.Abstractions.Models;
 using Ringly.Asterisk.Brokers;
 using Ringly.Asterisk.Models;
+using Ringly.CallCenter.Abstractions;
+using Ringly.CallCenter.Abstractions.Models;
 
 namespace Ringly.Samples.WebApi;
 
@@ -19,7 +22,14 @@ public class RideHailingCallRouter : BackgroundService, ICallLifecycleEventSourc
     private const string MixingBridgeType = "mixing";
     private const string UpChannelState = "Up";
 
+    // Row #38d — the extension Dograh's native Call Transfer tool dials (see extensions.conf's
+    // own comment on the "9000" extension for the full reasoning). Not a real callee to dial;
+    // OnStasisStart special-cases it below instead of treating it like any other _X. extension.
+    private const string DograhTransferExtension = "9000";
+    private const string SupportQueueName = "support";
+
     private readonly IAsteriskBroker asteriskBroker;
+    private readonly IServiceScopeFactory serviceScopeFactory;
     private readonly ILogger<RideHailingCallRouter> logger;
 
     // Tracks channels this router originated itself (the callee leg) so the caller's leg isn't
@@ -66,9 +76,13 @@ public class RideHailingCallRouter : BackgroundService, ICallLifecycleEventSourc
 
     private sealed record PendingCall(string BridgeId, string CallerChannelId);
 
-    public RideHailingCallRouter(IAsteriskBroker asteriskBroker, ILogger<RideHailingCallRouter> logger)
+    public RideHailingCallRouter(
+        IAsteriskBroker asteriskBroker,
+        IServiceScopeFactory serviceScopeFactory,
+        ILogger<RideHailingCallRouter> logger)
     {
         this.asteriskBroker = asteriskBroker;
+        this.serviceScopeFactory = serviceScopeFactory;
         this.logger = logger;
     }
 
@@ -161,6 +175,12 @@ public class RideHailingCallRouter : BackgroundService, ICallLifecycleEventSourc
 
         string targetExtension = stasisStartEvent.Args[0];
 
+        if (targetExtension == DograhTransferExtension)
+        {
+            await this.HandleDograhTransferAsync(stasisStartEvent.ChannelId);
+            return;
+        }
+
         // Send ringing indication (SIP 180 Ringing) rather than answering — answering this leg
         // immediately was confirmed to make the caller's own client transition straight to an
         // "answered" call state well before the callee had even started ringing, since ARI's
@@ -187,6 +207,35 @@ public class RideHailingCallRouter : BackgroundService, ICallLifecycleEventSourc
         this.peerChannelIdByChannelId[targetChannel.ChannelId] = stasisStartEvent.ChannelId;
 
         this.callIdByChannelId[targetChannel.ChannelId] = stasisStartEvent.ChannelId;
+    }
+
+    // Row #38d — a fresh channel Dograh's own Call Transfer tool dialed (PJSIP/9000, resolved to
+    // a static Local-channel contact so it lands here rather than requiring a real registered
+    // device), not one being moved mid-flight — so none of EscalateToQueueAsync's ARI /move race
+    // with Dograh's own app applies. IQueueRegistry is Scoped; this class is a singleton
+    // BackgroundService, so a fresh scope is created per event rather than injecting it directly
+    // (same DI-lifetime fix as RecordingFinalizer).
+    private async Task HandleDograhTransferAsync(string channelId)
+    {
+        await this.asteriskBroker.AnswerChannelAsync(channelId);
+
+        using IServiceScope scope = this.serviceScopeFactory.CreateScope();
+        IQueueRegistry queueRegistry = scope.ServiceProvider.GetRequiredService<IQueueRegistry>();
+        HoldingBridge? holdingBridge = await queueRegistry.RetrieveByNameAsync(SupportQueueName);
+
+        if (holdingBridge is null)
+        {
+            this.logger.LogError(
+                "Dograh call-transfer target channel {ChannelId} could not be routed: " +
+                "no '{QueueName}' queue is registered.",
+                channelId,
+                SupportQueueName);
+
+            await this.asteriskBroker.HangupChannelAsync(channelId);
+            return;
+        }
+
+        await this.asteriskBroker.AddChannelToBridgeAsync(holdingBridge.BridgeId, channelId);
     }
 
     private async Task HandleStasisEndAsync(StasisEndEvent stasisEndEvent)

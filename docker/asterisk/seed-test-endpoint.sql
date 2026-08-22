@@ -21,6 +21,16 @@ INSERT INTO ps_aors (id, max_contacts, remove_existing)
 VALUES ('1000', 1, 'yes'), ('1001', 1, 'yes'), ('1002', 1, 'yes'), ('1003', 1, 'yes'), ('1004', 1, 'yes')
 ON CONFLICT (id) DO NOTHING;
 
+-- "9000" is a static transfer-target endpoint for Dograh's native Call Transfer tool (row #38d) —
+-- unlike 1000-1004 above, nothing ever registers to it; its AOR has a static contact pointing at
+-- a Local channel instead, so dialing PJSIP/9000 lands directly in extensions.conf's own
+-- [ride_hailing] dialplan (Stasis(ride_hailing_app,9000)) rather than requiring (or waiting
+-- forever for) a real registered device. See extensions.conf's own comment on this extension for
+-- the full reasoning.
+INSERT INTO ps_aors (id, contact, max_contacts)
+VALUES ('9000', 'Local/9000@ride_hailing', 1)
+ON CONFLICT (id) DO UPDATE SET contact = EXCLUDED.contact, max_contacts = EXCLUDED.max_contacts;
+
 INSERT INTO ps_auths (id, auth_type, username, password)
 VALUES
     ('1000', 'userpass', '1000', 'ringly-dev-1000'),
@@ -65,6 +75,16 @@ VALUES
     ('1004', 'ride_hailing', 'all', 'opus,ulaw,vp8', '1004', '1004', 'yes', 'yes',
      'PJSIP_TRANSFER_HANDLING()=ari-only', 180, 300)
 ON CONFLICT (id) DO NOTHING;
+
+-- "9000" has no auth row — nothing ever originates a request FROM it, only Dial()/ARI-originates
+-- TO it, which doesn't require SIP authentication. webrtc/rewrite_contact are both 'no' (no real
+-- device, no registration to rewrite); allow matches Dograh's own external-media codec (ulaw)
+-- plus opus for any other caller.
+INSERT INTO ps_endpoints (id, context, disallow, allow, aors, webrtc, rewrite_contact)
+VALUES ('9000', 'ride_hailing', 'all', 'ulaw,opus', '9000', 'no', 'no')
+ON CONFLICT (id) DO UPDATE SET
+    context = EXCLUDED.context, disallow = EXCLUDED.disallow, allow = EXCLUDED.allow,
+    aors = EXCLUDED.aors, webrtc = EXCLUDED.webrtc, rewrite_contact = EXCLUDED.rewrite_contact;
 -- ON CONFLICT DO NOTHING means this reassignment only applies to a fresh volume — an
 -- already-seeded Postgres data volume keeps 1002's old ride_hailing/opus,ulaw,vp8 row as-is.
 -- Recreate the volume (or run the equivalent UPDATE by hand) to pick this up on an existing

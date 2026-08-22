@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 using RESTFulSense.Controllers;
 using Ringly.Abstractions;
@@ -111,6 +112,36 @@ public class SupportController : RESTFulController
             return this.InternalServerError(callProviderServiceException);
         }
     }
+
+    // Dograh's native "Call Transfer" tool's Dynamic HTTP Resolver
+    // (docs.dograh.com/voice-agent/tools/call-transfer) — replaces the raw ARI /channels/{id}/move
+    // approach (PostEscalateAsync above), which turned out to make Dograh's own app hang the call
+    // up defensively the instant it noticed the channel disappear from its Stasis app. Dograh
+    // POSTs a flat JSON object of whatever LLM/preset parameters its tool config sends (none
+    // needed here — there is currently only one destination) and expects back
+    // transfer_context.destination as a real SIP endpoint string; Dograh itself then dials that
+    // destination and manages the transfer, so this is pure mapping with no service call at all.
+    // "PJSIP/9000" resolves to a static Local-channel contact (see
+    // docker/asterisk/seed-test-endpoint.sql) that lands in extensions.conf's own
+    // [ride_hailing] dialplan, which RideHailingCallRouter special-cases to bridge straight into
+    // the support queue.
+    [HttpPost("dograh-transfer-resolver")]
+    public ActionResult<DograhTransferResolverResponse> PostDograhTransferResolverAsync(
+        [FromBody] Dictionary<string, object> request) =>
+        this.Ok(new DograhTransferResolverResponse(
+            new DograhTransferContext(
+                Destination: "PJSIP/9000",
+                CustomMessage: "Connecting you to a support agent now.")));
 }
 
 public record EscalateToQueueRequest(string ChannelId, string QueueName);
+
+// [JsonPropertyName] required on every field here — ASP.NET Core's default MVC JSON output is
+// camelCase (transferContext/customMessage), but Dograh's own docs specify snake_case
+// (transfer_context/custom_message) for the Dynamic HTTP Resolver's expected response shape.
+public record DograhTransferContext(
+    [property: JsonPropertyName("destination")] string Destination,
+    [property: JsonPropertyName("custom_message")] string CustomMessage);
+
+public record DograhTransferResolverResponse(
+    [property: JsonPropertyName("transfer_context")] DograhTransferContext TransferContext);
