@@ -70,8 +70,14 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         // consts) specifically so callers can raise the tolerance; done once here for the whole
         // app rather than per-call, since there's no legitimate reason to want the aggressive
         // defaults for this client.
-        SIPSorcery.Net.RtpIceChannel.DISCONNECTED_TIMEOUT_PERIOD = 30;
-        SIPSorcery.Net.RtpIceChannel.FAILED_TIMEOUT_PERIOD = 60;
+        //
+        // Raised again (30s -> 90s, 60s -> 120s): confirmed live a second time — real calls
+        // were still being torn down at almost exactly 30.0s post-answer (measured from
+        // Asterisk's own trace: customer channel answer to client-initiated BYE), the previous
+        // raised value, on a different Wi-Fi network than the one that prompted the original
+        // 8s->30s change. The jitter this is compensating for isn't a one-network fluke.
+        SIPSorcery.Net.RtpIceChannel.DISCONNECTED_TIMEOUT_PERIOD = 90;
+        SIPSorcery.Net.RtpIceChannel.FAILED_TIMEOUT_PERIOD = 120;
 
         this.rtcConfiguration = new RTCConfiguration
         {
