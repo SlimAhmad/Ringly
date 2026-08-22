@@ -39,8 +39,7 @@ public class SipSorceryCallClient : ICallClient, IDisposable
     // platform-specific — this library has no built-in microphone/speaker/camera access of its
     // own (SIPSorcery's own platform audio packages, e.g. SIPSorceryMedia.Windows, need a
     // platform-specific TFM this cross-platform project doesn't have). Without them, calls still
-    // negotiate real SDP and connect (proven working), but no actual audio/video flows —
-    // Asterisk's RTP-timeout hangs the call up after ~30s of silence either way. Callers that
+    // negotiate real SDP and connect (proven working), but no actual audio/video flows. Callers that
     // want real media construct platform endpoints (e.g. SIPSorceryMedia.Windows's
     // WindowsAudioEndPoint implements both audio interfaces) and register them for DI;
     // Microsoft.Extensions.DependencyInjection resolves these to null via the default parameter
