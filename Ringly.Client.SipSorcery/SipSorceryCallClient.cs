@@ -354,6 +354,18 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         var audioTrack = new MediaStreamTrack(formats, MediaStreamStatusEnum.SendRecv);
         mediaSession.addTrack(audioTrack);
 
+        // Confirmed live as the actual cause of the ~30-35s call cutoff that survived raising
+        // RtpIceChannel's own DISCONNECTED_TIMEOUT_PERIOD/FAILED_TIMEOUT_PERIOD (a separate,
+        // ICE-only mechanism that never fired here at all): SIPSorcery's RTCPSession has its own
+        // independent no-activity watchdog (NoActivityTimeoutMilliseconds, default 30000ms,
+        // checked every 5s) that calls SIPUserAgent.Hangup() - a real SIP BYE, not just an ICE
+        // state change - the moment a media stream goes 30s without receiving an RTP or RTCP
+        // packet. Confirmed via Asterisk's own SIP trace: the BYE that ends every call arrives
+        // 30-35s after answer, from this client, on the same dialog - matching this timer's
+        // 30000ms threshold plus up to 5s until its next check tick, not the ICE timers at all.
+        // Raised to match the tolerance already applied to ICE's own disconnect timeout.
+        mediaSession.AudioStream.RtcpSession.NoActivityTimeoutMilliseconds = 90000;
+
         // Unlike audio, video is only advertised when a real source or sink is actually
         // registered — there's no "signaling-only" fallback video format the way PCMU serves for
         // audio, and forcing a video "m=" line onto every audio-only call would negotiate a
@@ -365,6 +377,7 @@ public class SipSorceryCallClient : ICallClient, IDisposable
 
             var videoTrack = new MediaStreamTrack(videoFormats, MediaStreamStatusEnum.SendRecv);
             mediaSession.addTrack(videoTrack);
+            mediaSession.VideoStream.RtcpSession.NoActivityTimeoutMilliseconds = 90000;
         }
 
         // Fallback so the UI always learns a call ended, even when the far end's BYE never
