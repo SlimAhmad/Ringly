@@ -363,8 +363,14 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         // packet. Confirmed via Asterisk's own SIP trace: the BYE that ends every call arrives
         // 30-35s after answer, from this client, on the same dialog - matching this timer's
         // 30000ms threshold plus up to 5s until its next check tick, not the ICE timers at all.
-        // Raised to match the tolerance already applied to ICE's own disconnect timeout.
-        mediaSession.AudioStream.RtcpSession.NoActivityTimeoutMilliseconds = 90000;
+        // First raised to 90000ms to match ICE's own disconnect tolerance - confirmed live a
+        // second time that this only delayed the same cutoff (a call ran ~88s, not indefinitely),
+        // meaning real RTP/RTCP genuinely does go quiet mid-call on a healthy, still-connected
+        // call (e.g. codec silence suppression/DTX, or a transient NAT/relay gap) - raising the
+        // number further only postpones the same false-positive hangup. Disabled outright:
+        // Ringly's own call-lifecycle contract is that a call ends only on an explicit hangup
+        // (UI button or provider-driven), never on an inferred media gap.
+        mediaSession.AudioStream.RtcpSession.NoActivityTimeoutMilliseconds = int.MaxValue;
 
         // Unlike audio, video is only advertised when a real source or sink is actually
         // registered — there's no "signaling-only" fallback video format the way PCMU serves for
@@ -377,7 +383,7 @@ public class SipSorceryCallClient : ICallClient, IDisposable
 
             var videoTrack = new MediaStreamTrack(videoFormats, MediaStreamStatusEnum.SendRecv);
             mediaSession.addTrack(videoTrack);
-            mediaSession.VideoStream.RtcpSession.NoActivityTimeoutMilliseconds = 90000;
+            mediaSession.VideoStream.RtcpSession.NoActivityTimeoutMilliseconds = int.MaxValue;
         }
 
         // Fallback so the UI always learns a call ended, even when the far end's BYE never
