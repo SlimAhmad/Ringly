@@ -39,8 +39,7 @@ public class SipSorceryCallClient : ICallClient, IDisposable
     // platform-specific — this library has no built-in microphone/speaker/camera access of its
     // own (SIPSorcery's own platform audio packages, e.g. SIPSorceryMedia.Windows, need a
     // platform-specific TFM this cross-platform project doesn't have). Without them, calls still
-    // negotiate real SDP and connect (proven working), but no actual audio/video flows —
-    // Asterisk's RTP-timeout hangs the call up after ~30s of silence either way. Callers that
+    // negotiate real SDP and connect (proven working), but no actual audio/video flows. Callers that
     // want real media construct platform endpoints (e.g. SIPSorceryMedia.Windows's
     // WindowsAudioEndPoint implements both audio interfaces) and register them for DI;
     // Microsoft.Extensions.DependencyInjection resolves these to null via the default parameter
@@ -354,6 +353,24 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         var audioTrack = new MediaStreamTrack(formats, MediaStreamStatusEnum.SendRecv);
         mediaSession.addTrack(audioTrack);
 
+        // Confirmed live as the actual cause of the ~30-35s call cutoff that survived raising
+        // RtpIceChannel's own DISCONNECTED_TIMEOUT_PERIOD/FAILED_TIMEOUT_PERIOD (a separate,
+        // ICE-only mechanism that never fired here at all): SIPSorcery's RTCPSession has its own
+        // independent no-activity watchdog (NoActivityTimeoutMilliseconds, default 30000ms,
+        // checked every 5s) that calls SIPUserAgent.Hangup() - a real SIP BYE, not just an ICE
+        // state change - the moment a media stream goes 30s without receiving an RTP or RTCP
+        // packet. Confirmed via Asterisk's own SIP trace: the BYE that ends every call arrives
+        // 30-35s after answer, from this client, on the same dialog - matching this timer's
+        // 30000ms threshold plus up to 5s until its next check tick, not the ICE timers at all.
+        // First raised to 90000ms to match ICE's own disconnect tolerance - confirmed live a
+        // second time that this only delayed the same cutoff (a call ran ~88s, not indefinitely),
+        // meaning real RTP/RTCP genuinely does go quiet mid-call on a healthy, still-connected
+        // call (e.g. codec silence suppression/DTX, or a transient NAT/relay gap) - raising the
+        // number further only postpones the same false-positive hangup. Disabled outright:
+        // Ringly's own call-lifecycle contract is that a call ends only on an explicit hangup
+        // (UI button or provider-driven), never on an inferred media gap.
+        mediaSession.AudioStream.RtcpSession.NoActivityTimeoutMilliseconds = int.MaxValue;
+
         // Unlike audio, video is only advertised when a real source or sink is actually
         // registered — there's no "signaling-only" fallback video format the way PCMU serves for
         // audio, and forcing a video "m=" line onto every audio-only call would negotiate a
@@ -365,6 +382,7 @@ public class SipSorceryCallClient : ICallClient, IDisposable
 
             var videoTrack = new MediaStreamTrack(videoFormats, MediaStreamStatusEnum.SendRecv);
             mediaSession.addTrack(videoTrack);
+            mediaSession.VideoStream.RtcpSession.NoActivityTimeoutMilliseconds = int.MaxValue;
         }
 
         // Fallback so the UI always learns a call ended, even when the far end's BYE never
