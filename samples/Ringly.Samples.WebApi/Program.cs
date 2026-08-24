@@ -6,6 +6,7 @@ using Ringly.Asterisk.Services.Foundations.SipEndpoints;
 using Ringly.Asterisk.Services.Processings.Provisioning;
 using Ringly.CallCenter.Abstractions;
 using Ringly.CallCenter.Asterisk.Services.Foundations.Queues;
+using Ringly.Client.SipSorcery;
 using Ringly.Samples.WebApi;
 using Ringly.Samples.WebApi.Brokers.Storages;
 using Ringly.Samples.WebApi.Services.Foundations.Recordings;
@@ -98,6 +99,18 @@ builder.Services.AddHostedService<TelephonyCallTrackingService>();
 // because the call just hung up on its own — see RecordingFinalizer's own comment for why this
 // replaced the upload logic that used to live inline in RecordingsController.PostStopAsync.
 builder.Services.AddHostedService<RecordingFinalizer>();
+
+// See QueueTransferRegistrarService's own comment for why this exists — Dograh's native Call
+// Transfer tool can only dial a real, registered SIP endpoint, so this WebApi process itself
+// registers one. "localhost" — the WebApi runs on the same Windows host Asterisk's ports are
+// published to, same as samples/Ringly.Samples.Maui's own Windows-platform RegistrarHost.
+builder.Services.Configure<SipSorceryCallOptions>(options =>
+{
+    options.RegistrarHost = "localhost:5060";
+    options.RegistrationExpirySeconds = 120;
+});
+
+builder.Services.AddHostedService<QueueTransferRegistrarService>();
 
 var app = builder.Build();
 

@@ -9,4 +9,5 @@ public partial interface IAsteriskBroker
     ValueTask RemoveChannelFromBridgeAsync(string bridgeId, string channelId);
     ValueTask StartMusicOnHoldAsync(string bridgeId, string mohClass);
     ValueTask StopMusicOnHoldAsync(string bridgeId);
+    ValueTask<string?> RetrieveBridgeIdByChannelNamePrefixAsync(string channelNamePrefix);
 }

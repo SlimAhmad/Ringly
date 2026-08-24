@@ -154,7 +154,34 @@ public class SupportController : RESTFulController
             return this.InternalServerError(callProviderServiceException);
         }
     }
+
+    // Dograh's native "Call Transfer" tool's Dynamic HTTP Resolver
+    // (docs.dograh.com/voice-agent/tools/call-transfer). Dograh POSTs a flat JSON object of
+    // whatever LLM/preset parameters its tool config sends (none needed here — there is currently
+    // only one destination) and expects back transfer_context.destination as a real SIP endpoint
+    // string; Dograh itself then dials that destination and manages the transfer, so this is pure
+    // mapping with no service call needed. "supportregistrar" is
+    // QueueTransferRegistrarService's own real, always-registered endpoint — see that class's own
+    // comment for the full architecture (why a real registered SIP endpoint is required at all,
+    // and why nothing after this ever moves/removes anything from the bridge Dograh creates).
+    [HttpPost("dograh-transfer-resolver")]
+    public ActionResult<DograhTransferResolverResponse> PostDograhTransferResolverAsync(
+        [FromBody] Dictionary<string, object> request) =>
+        this.Ok(new DograhTransferResolverResponse(
+            new DograhTransferContext(
+                Destination: "PJSIP/supportregistrar",
+                CustomMessage: "Connecting you to a support agent now.")));
 }
 
 public record EscalateToQueueRequest(string ChannelId, string QueueName);
 public record EscalateToQueueByCallerNumberRequest(string CallerNumber, string QueueName);
+
+// [JsonPropertyName] required on every field here — ASP.NET Core's default MVC JSON output is
+// camelCase (transferContext/customMessage), but Dograh's own docs specify snake_case
+// (transfer_context/custom_message) for the Dynamic HTTP Resolver's expected response shape.
+public record DograhTransferContext(
+    [property: System.Text.Json.Serialization.JsonPropertyName("destination")] string Destination,
+    [property: System.Text.Json.Serialization.JsonPropertyName("custom_message")] string CustomMessage);
+
+public record DograhTransferResolverResponse(
+    [property: System.Text.Json.Serialization.JsonPropertyName("transfer_context")] DograhTransferContext TransferContext);

@@ -10,4 +10,7 @@ public class Bridge
 
     [JsonProperty("bridge_type")]
     public string BridgeType { get; set; } = string.Empty;
+
+    [JsonProperty("channels")]
+    public List<string> Channels { get; set; } = [];
 }

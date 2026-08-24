@@ -36,4 +36,16 @@ public partial interface ICallProvider
     // — confirmed live as a bug when it wasn't: callers kept reporting the original holding
     // bridge, which downstream consumers (e.g. call recording) then pointed at an empty bridge.
     ValueTask<AgentConnection> ConnectAgentToQueueAsync(string bridgeId, string customerChannelId, string agentExtension);
+
+    // For a call already sitting in a bridge Ringly doesn't own and never created (e.g. one an
+    // external AI agent like Dograh's own Call Transfer tool bridged a caller into) — adds the
+    // claiming agent's channel directly into that existing bridge, with no removal/recreation
+    // step. Confirmed live as a hard requirement for Dograh specifically: any attempt to move or
+    // remove a channel FROM a bridge Dograh's own ARI app still considers itself responsible for
+    // makes Dograh's app conclude the call ended and tear down its own side defensively — adding
+    // a third participant to the bridge it already owns does not trigger that reaction the same
+    // way. Unlike ConnectAgentToQueueAsync, there is no "customer channel" to remove from a
+    // holding bridge here — the caller and whatever Dograh already bridged them with (e.g.
+    // Ringly's own always-answering registrar endpoint) both stay exactly where they are.
+    ValueTask<AgentConnection> ConnectAgentToBridgeAsync(string bridgeId, string agentExtension);
 }

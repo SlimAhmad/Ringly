@@ -1,5 +1,4 @@
 using Ringly.Abstractions.Models;
-using Ringly.Twilio.Models;
 
 namespace Ringly.Twilio.Services.Foundations.CallSessions;
 
@@ -18,12 +17,6 @@ public partial class TwilioCallProvider
     {
         ValidateConnectAgentToQueueRequest(bridgeId, customerChannelId, agentExtension);
 
-        TwilioParticipant participant = await this.twilioBroker.AddParticipantAsync(bridgeId, new TwilioParticipantConfig
-        {
-            To = agentExtension,
-            From = this.twilioOptions.DefaultCallerId
-        });
-
-        return new AgentConnection { AgentChannelId = participant.CallSid, BridgeId = bridgeId };
+        return await this.AddAgentToConferenceAsync(bridgeId, agentExtension);
     });
 }
