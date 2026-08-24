@@ -17,6 +17,30 @@ public partial class AsteriskCallFoundationService
     {
         ValidateEscalateToQueueRequest(channelId, queueName);
 
+        return await EscalateChannelToQueueAsync(channelId, queueName);
+    });
+
+    // Same escalation, resolved from the caller's own phone number instead of a channel id —
+    // confirmed against Dograh's own support that the channel id is never available to a tool
+    // call mid-call (only post-call, via a separate run-record API), while caller_number is one
+    // of the automatically-available variables Dograh can pass to a tool.
+    public ValueTask<CallSession> EscalateToQueueByCallerNumberAsync(string callerNumber, string queueName) =>
+    TryCatch(async () =>
+    {
+        ValidateEscalateToQueueByCallerNumberRequest(callerNumber, queueName);
+
+        string? channelId = await this.asteriskBroker.RetrieveChannelIdByCallerNumberAsync(callerNumber);
+
+        if (channelId is null)
+        {
+            throw new NotFoundChannelException(callerNumber);
+        }
+
+        return await EscalateChannelToQueueAsync(channelId, queueName);
+    });
+
+    private async ValueTask<CallSession> EscalateChannelToQueueAsync(string channelId, string queueName)
+    {
         HoldingBridge? holdingBridge = await this.queueRegistry.RetrieveByNameAsync(queueName);
 
         if (holdingBridge is null)
@@ -39,5 +63,5 @@ public partial class AsteriskCallFoundationService
             BridgeId = holdingBridge.BridgeId,
             CustomerChannelId = channelId
         };
-    });
+    }
 }

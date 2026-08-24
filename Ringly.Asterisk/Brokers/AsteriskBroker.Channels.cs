@@ -32,4 +32,17 @@ public partial class AsteriskBroker
         await this.PostAsync(
             $"{ChannelsRelativeUrl}/{Uri.EscapeDataString(channelId)}/move" +
             $"?app={Uri.EscapeDataString(this.asteriskOptions.StasisAppName)}");
+
+    // ARI's GET /channels lists every live channel on the whole Asterisk instance (not scoped to
+    // any one Stasis app) — the only way to resolve a channel id for an escalating external AI
+    // agent (e.g. Dograh) that can only ever supply the caller's own phone number to a tool call,
+    // never the channel id itself. Picks the first match; a genuine same-number concurrent-call
+    // collision is out of scope here (mirrors how RouteToQueueAsync itself has no more specific
+    // signal to disambiguate on either).
+    public async ValueTask<string?> RetrieveChannelIdByCallerNumberAsync(string callerNumber)
+    {
+        List<AriChannelResponse> channels = await this.GetAsync<List<AriChannelResponse>>(ChannelsRelativeUrl);
+
+        return channels.FirstOrDefault(channel => channel.Caller.Number == callerNumber)?.Id;
+    }
 }

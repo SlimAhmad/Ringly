@@ -36,4 +36,17 @@ public partial class TwilioBroker
         await this.PostFormAsync(
             string.Format(CallRelativeUrlFormat, callSid),
             [new("Status", "completed")]);
+
+    // GET Calls.json?From=...&Status=in-progress — the only way to resolve a call SID for an
+    // escalating external AI agent that can only ever supply the caller's own phone number to a
+    // tool call, never the call SID itself (same gap as Asterisk ARI's channel id, confirmed for
+    // Dograh specifically). Picks the first match; a genuine same-number concurrent-call
+    // collision is out of scope here (mirrors AsteriskBroker's own equivalent).
+    public async ValueTask<string?> RetrieveCallSidByCallerNumberAsync(string callerNumber)
+    {
+        TwilioCallsListResponse response = await this.GetAsync<TwilioCallsListResponse>(
+            $"{CallsRelativeUrl}?From={Uri.EscapeDataString(callerNumber)}&Status=in-progress");
+
+        return response.Calls.FirstOrDefault()?.Sid;
+    }
 }
