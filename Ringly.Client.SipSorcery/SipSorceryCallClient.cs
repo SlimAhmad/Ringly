@@ -273,6 +273,22 @@ public class SipSorceryCallClient : ICallClient, IDisposable
         return ValueTask.CompletedTask;
     }
 
+    // Same registrar-host-qualification reasoning as PlaceCallAsync — a bare extension has no
+    // resolvable "@domain" part on its own. Sends a real SIP REFER to the current call's own
+    // dialog peer (e.g. Asterisk), asking it to dial targetExtension and take over from here;
+    // SIPSorcery's own BlindTransfer acts on this client's single tracked SIPUserAgent dialogue,
+    // so handle isn't otherwise used - kept on the signature to match every other call-scoped
+    // method here and to fail loudly (via SIPUserAgent's own null-dialogue behavior) rather than
+    // silently transferring the wrong call if this client ever tracks more than one at once.
+    public async ValueTask<bool> BlindTransferAsync(CallHandle handle, string targetExtension, int timeoutSeconds = 10)
+    {
+        string registrarHost = this.options.RegistrarHost.Split(';')[0];
+        SIPURI destinationUri = SIPURI.ParseSIPURIRelaxed($"{targetExtension}@{registrarHost}");
+
+        return await this.userAgent.BlindTransfer(
+            destinationUri, TimeSpan.FromSeconds(timeoutSeconds), CancellationToken.None);
+    }
+
     // No-op without a real audioSource (e.g. Android, which has none wired up yet) — there's
     // no audio being sent to pause in the first place.
     public async ValueTask MuteAsync()

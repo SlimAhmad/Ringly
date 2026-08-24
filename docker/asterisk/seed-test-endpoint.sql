@@ -18,7 +18,8 @@
 -- remove_existing=yes makes a new registration replace the old one instead of being
 -- rejected — the correct behavior for an AOR that only ever has one real device using it.
 INSERT INTO ps_aors (id, max_contacts, remove_existing)
-VALUES ('1000', 1, 'yes'), ('1001', 1, 'yes'), ('1002', 1, 'yes'), ('1003', 1, 'yes'), ('1004', 1, 'yes')
+VALUES ('1000', 1, 'yes'), ('1001', 1, 'yes'), ('1002', 1, 'yes'), ('1003', 1, 'yes'), ('1004', 1, 'yes'),
+       ('supportregistrar', 1, 'yes')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO ps_auths (id, auth_type, username, password)
@@ -27,7 +28,8 @@ VALUES
     ('1001', 'userpass', '1001', 'ringly-dev-1001'),
     ('1002', 'userpass', '1002', 'ringly-dev-1002'),
     ('1003', 'userpass', '1003', 'ringly-dev-1003'),
-    ('1004', 'userpass', '1004', 'ringly-dev-1004')
+    ('1004', 'userpass', '1004', 'ringly-dev-1004'),
+    ('supportregistrar', 'userpass', 'supportregistrar', 'ringly-dev-supportregistrar')
 ON CONFLICT (id) DO NOTHING;
 
 -- allow includes vp8 alongside the audio codecs — confirmed live that without it, Asterisk's
@@ -70,3 +72,13 @@ ON CONFLICT (id) DO NOTHING;
 -- Recreate the volume (or run the equivalent UPDATE by hand) to pick this up on an existing
 -- local stack.
 UPDATE ps_endpoints SET context = 'dograh_ai', allow = 'ulaw' WHERE id = '1002';
+
+-- Row #38e — QueueTransferRegistrarService's own real, always-registered SIP endpoint. Deliberately
+-- NOT given PJSIP_TRANSFER_HANDLING()=ari-only unlike every endpoint above: this one's whole job is
+-- to send a real SIP BlindTransfer (REFER) the moment it answers, and that needs Asterisk to
+-- process it as a genuine native transfer, not intercept it as an ARI TransferRequested event this
+-- codebase has no handler for. webrtc=no/rewrite_contact=yes since this registers from a plain
+-- Windows/ASP.NET process (no browser, no WebRTC), same as any other real UDP-registering client.
+INSERT INTO ps_endpoints (id, context, disallow, allow, auth, aors, webrtc, rewrite_contact)
+VALUES ('supportregistrar', 'ride_hailing', 'all', 'ulaw,opus', 'supportregistrar', 'supportregistrar', 'no', 'yes')
+ON CONFLICT (id) DO NOTHING;

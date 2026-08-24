@@ -12,6 +12,12 @@ public partial interface ICallClient
     ValueTask<CallHandle> PlaceCallAsync(string targetExtension, bool includeVideo = true);
     ValueTask AnswerCallAsync(CallHandle handle);
     ValueTask HangupAsync(CallHandle handle);
+
+    // Sends a real SIP REFER to the current call's own dialog peer, asking IT (not this client)
+    // to place a new call to targetExtension and replace this one — the standard blind-transfer
+    // mechanism, distinct from HangupAsync (which just ends this side's own participation).
+    // Returns whether the far end accepted the transfer request within timeoutSeconds.
+    ValueTask<bool> BlindTransferAsync(CallHandle handle, string targetExtension, int timeoutSeconds = 10);
     ValueTask MuteAsync();
     ValueTask UnmuteAsync();
 
