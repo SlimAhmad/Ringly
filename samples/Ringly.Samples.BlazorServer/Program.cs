@@ -65,7 +65,12 @@ builder.Services.AddSingleton<IQueueApiBroker, QueueApiBroker>();
 builder.Services.AddSingleton<IDepartmentsViewService, DepartmentsViewService>();
 
 builder.Services.AddSingleton<IRecordingApiBroker, RecordingApiBroker>();
-builder.Services.AddSingleton<IRecordingViewService, RecordingViewService>();
+
+// Scoped, not Singleton like its siblings above — confirmed live that DI validation fails
+// outright at startup otherwise ("Cannot consume scoped service 'IJSRuntime' from singleton"):
+// RecordingViewService.PlayAsync needs IJSRuntime, which Blazor Server registers per-circuit
+// (Scoped), so this can't be a Singleton like the other ViewServices here, which don't need it.
+builder.Services.AddScoped<IRecordingViewService, RecordingViewService>();
 
 // Part 8c: agent console — availability toggle + live broadcast list, calling
 // Ringly.Samples.WebApi's AgentsController.
