@@ -77,8 +77,13 @@ UPDATE ps_endpoints SET context = 'dograh_ai', allow = 'ulaw' WHERE id = '1002';
 -- NOT given PJSIP_TRANSFER_HANDLING()=ari-only unlike every endpoint above: this one's whole job is
 -- to send a real SIP BlindTransfer (REFER) the moment it answers, and that needs Asterisk to
 -- process it as a genuine native transfer, not intercept it as an ARI TransferRequested event this
--- codebase has no handler for. webrtc=no/rewrite_contact=yes since this registers from a plain
--- Windows/ASP.NET process (no browser, no WebRTC), same as any other real UDP-registering client.
+-- codebase has no handler for. webrtc=yes (not "no", despite this being a plain Windows/ASP.NET
+-- process with no browser involved) - confirmed live as a real bug: QueueTransferRegistrarService
+-- uses SipSorceryCallClient, which always negotiates media via RTCPeerConnection (a WebRTC media
+-- stack) regardless of what the call itself is for, so it fundamentally requires DTLS-SRTP.
+-- webrtc=no here made Asterisk offer plain "RTP/AVP" with no DTLS fingerprint, which our own
+-- client rejected outright with "406 DtlsFingerprintMissing" - same reasoning as every other
+-- SipSorceryCallClient-based endpoint above (1000-1004), all of which are also webrtc=yes.
 INSERT INTO ps_endpoints (id, context, disallow, allow, auth, aors, webrtc, rewrite_contact)
-VALUES ('supportregistrar', 'ride_hailing', 'all', 'ulaw,opus', 'supportregistrar', 'supportregistrar', 'no', 'yes')
+VALUES ('supportregistrar', 'ride_hailing', 'all', 'ulaw,opus', 'supportregistrar', 'supportregistrar', 'yes', 'yes')
 ON CONFLICT (id) DO NOTHING;
