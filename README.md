@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/ringly-icon-512.png" alt="Ringly" width="128" height="128">
+</p>
+
 # Ringly
 
 Ringly is a pluggable, real-time calling library for .NET/MAUI apps. It gives you a

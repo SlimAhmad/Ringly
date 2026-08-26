@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/ringly-icon-128.png" alt="Ringly" width="64" height="64">
+</p>
+
 # Getting Started
 
 This walks through wiring up Ringly's Asterisk backend end-to-end: provisioning a
