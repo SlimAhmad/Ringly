@@ -25,15 +25,28 @@ public enum ClaimAttemptResult
 // InMemoryQueueRegistry, which never evicts either.
 public class SupportQueueBroadcastRegistry
 {
-    private readonly ConcurrentDictionary<string, string> bridgeIdByChannelId = new();
+    // Row #38f — distinguishes a customer sitting in Ringly's OWN "holding" bridge (needs
+    // ConnectAgentToQueueAsync's remove-and-recreate-as-mixing-bridge step, since a holding
+    // bridge doesn't mix two-way audio) from one already sitting in a real, already-mixing bridge
+    // an external ARI app created (e.g. Dograh's own Call Transfer tool, via
+    // QueueTransferRegistrarService) — that one just needs the agent added directly
+    // (ConnectAgentToBridgeAsync), never removed/recreated, since removing anything from a bridge
+    // Dograh's own app still considers itself responsible for is what makes Dograh's app conclude
+    // the call ended. AgentsController.PostClaimAsync branches on this per-claim, so the agent
+    // console's own "Claim" button and its single claim endpoint never need to know which kind of
+    // queue entry they're looking at.
+    private sealed record WaitingEntry(string BridgeId, bool IsExternalBridge);
+
+    private readonly ConcurrentDictionary<string, WaitingEntry> entryByChannelId = new();
     private readonly ConcurrentDictionary<string, byte> claimedChannelIds = new();
     private readonly Subject<CallBroadcastEvent> waitingCustomers = new();
 
     public IObservable<CallBroadcastEvent> StreamWaitingCustomers() => this.waitingCustomers.AsObservable();
 
-    public void PublishWaitingCustomer(Guid clientId, string queueName, string channelId, string bridgeId)
+    public void PublishWaitingCustomer(
+        Guid clientId, string queueName, string channelId, string bridgeId, bool isExternalBridge = false)
     {
-        this.bridgeIdByChannelId[channelId] = bridgeId;
+        this.entryByChannelId[channelId] = new WaitingEntry(bridgeId, isExternalBridge);
 
         this.waitingCustomers.OnNext(new CallBroadcastEvent
         {
@@ -43,12 +56,17 @@ public class SupportQueueBroadcastRegistry
         });
     }
 
-    public ClaimAttemptResult TryClaim(string channelId, out string? bridgeId)
+    public ClaimAttemptResult TryClaim(string channelId, out string? bridgeId, out bool isExternalBridge)
     {
-        if (!this.bridgeIdByChannelId.TryGetValue(channelId, out bridgeId))
+        if (!this.entryByChannelId.TryGetValue(channelId, out WaitingEntry? entry))
         {
+            bridgeId = null;
+            isExternalBridge = false;
             return ClaimAttemptResult.NotFound;
         }
+
+        bridgeId = entry.BridgeId;
+        isExternalBridge = entry.IsExternalBridge;
 
         return this.claimedChannelIds.TryAdd(channelId, 0)
             ? ClaimAttemptResult.Claimed

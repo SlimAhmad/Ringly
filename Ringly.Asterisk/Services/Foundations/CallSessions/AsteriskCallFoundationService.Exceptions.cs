@@ -121,6 +121,10 @@ public partial class AsteriskCallFoundationService
         {
             throw await CreateAndLogValidationException(invalidConnectAgentToQueueRequestException);
         }
+        catch (InvalidConnectAgentToBridgeRequestException invalidConnectAgentToBridgeRequestException)
+        {
+            throw await CreateAndLogValidationException(invalidConnectAgentToBridgeRequestException);
+        }
         catch (HttpResponseBadRequestException)
         {
             var invalidCallParticipantException = new InvalidCallParticipantException();

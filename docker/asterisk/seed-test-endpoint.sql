@@ -18,7 +18,8 @@
 -- remove_existing=yes makes a new registration replace the old one instead of being
 -- rejected — the correct behavior for an AOR that only ever has one real device using it.
 INSERT INTO ps_aors (id, max_contacts, remove_existing)
-VALUES ('1000', 1, 'yes'), ('1001', 1, 'yes'), ('1002', 1, 'yes'), ('1003', 1, 'yes'), ('1004', 1, 'yes')
+VALUES ('1000', 1, 'yes'), ('1001', 1, 'yes'), ('1002', 1, 'yes'), ('1003', 1, 'yes'), ('1004', 1, 'yes'),
+       ('supportregistrar', 1, 'yes')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO ps_auths (id, auth_type, username, password)
@@ -27,7 +28,8 @@ VALUES
     ('1001', 'userpass', '1001', 'ringly-dev-1001'),
     ('1002', 'userpass', '1002', 'ringly-dev-1002'),
     ('1003', 'userpass', '1003', 'ringly-dev-1003'),
-    ('1004', 'userpass', '1004', 'ringly-dev-1004')
+    ('1004', 'userpass', '1004', 'ringly-dev-1004'),
+    ('supportregistrar', 'userpass', 'supportregistrar', 'ringly-dev-supportregistrar')
 ON CONFLICT (id) DO NOTHING;
 
 -- allow includes vp8 alongside the audio codecs — confirmed live that without it, Asterisk's
@@ -70,3 +72,20 @@ ON CONFLICT (id) DO NOTHING;
 -- Recreate the volume (or run the equivalent UPDATE by hand) to pick this up on an existing
 -- local stack.
 UPDATE ps_endpoints SET context = 'dograh_ai', allow = 'ulaw' WHERE id = '1002';
+
+-- Row #38f — QueueTransferRegistrarService's own real, always-registered SIP endpoint (see that
+-- class's own comment for the full architecture). webrtc=yes (not "no", despite this being a
+-- plain Windows/ASP.NET process with no browser involved) - confirmed live as a real bug the
+-- first time this was tried: QueueTransferRegistrarService uses SipSorceryCallClient, which
+-- always negotiates media via RTCPeerConnection (a WebRTC media stack) regardless of what the
+-- call itself is for, so it fundamentally requires DTLS-SRTP. webrtc=no here made Asterisk offer
+-- plain "RTP/AVP" with no DTLS fingerprint, which our own client rejected outright with
+-- "406 DtlsFingerprintMissing" - same reasoning as every other SipSorceryCallClient-based
+-- endpoint above (1000-1004), all of which are also webrtc=yes. No
+-- PJSIP_TRANSFER_HANDLING()=ari-only here unlike those endpoints - this one never sends its own
+-- transfer/REFER at all (that approach was tried and confirmed to make Dograh's own app tear
+-- down defensively - see QueueTransferRegistrarService's own comment), so there's nothing to
+-- route through ARI instead of core.
+INSERT INTO ps_endpoints (id, context, disallow, allow, auth, aors, webrtc, rewrite_contact)
+VALUES ('supportregistrar', 'ride_hailing', 'all', 'ulaw,opus', 'supportregistrar', 'supportregistrar', 'yes', 'yes')
+ON CONFLICT (id) DO NOTHING;

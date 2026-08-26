@@ -65,7 +65,8 @@ public class AgentsController : RESTFulController
     [HttpPost("{agentAppName}/claim/{channelId}")]
     public async ValueTask<ActionResult<ClaimResult>> PostClaimAsync(string agentAppName, string channelId)
     {
-        ClaimAttemptResult claimAttemptResult = this.supportQueueBroadcastRegistry.TryClaim(channelId, out string? bridgeId);
+        ClaimAttemptResult claimAttemptResult = this.supportQueueBroadcastRegistry.TryClaim(
+            channelId, out string? bridgeId, out bool isExternalBridge);
 
         if (claimAttemptResult == ClaimAttemptResult.NotFound)
         {
@@ -79,8 +80,14 @@ public class AgentsController : RESTFulController
 
         try
         {
-            AgentConnection agentConnection =
-                await this.callProvider.ConnectAgentToQueueAsync(bridgeId!, channelId, agentAppName);
+            // See SupportQueueBroadcastRegistry's own comment on WaitingEntry for why this
+            // branches: a customer in Ringly's own holding bridge needs the remove-and-recreate
+            // step ConnectAgentToQueueAsync does, but a customer already sitting in a bridge an
+            // external ARI app (e.g. Dograh) still owns must never have anything removed from
+            // it — ConnectAgentToBridgeAsync only ever adds.
+            AgentConnection agentConnection = isExternalBridge
+                ? await this.callProvider.ConnectAgentToBridgeAsync(bridgeId!, agentAppName)
+                : await this.callProvider.ConnectAgentToQueueAsync(bridgeId!, channelId, agentAppName);
 
             // Confirmed live as a real gap: without this, hanging up on either side left the
             // other side's channel connected indefinitely — nothing was watching for one leg to

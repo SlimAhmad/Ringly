@@ -8,6 +8,11 @@ internal sealed class AriChannelResponse
     [JsonProperty("id")]
     public string Id { get; set; } = string.Empty;
 
+    // e.g. "PJSIP/supportregistrar-0000001c" — the endpoint name followed by a dash and a
+    // per-call sequence number, confirmed against real ARI channel responses.
+    [JsonProperty("name")]
+    public string Name { get; set; } = string.Empty;
+
     [JsonProperty("caller")]
     public AriChannelCaller Caller { get; set; } = new();
 }
