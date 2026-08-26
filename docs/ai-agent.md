@@ -23,12 +23,16 @@ Only a Twilio implementation exists today (`Ringly.AiAgent.Twilio`, via Twilio
 ConversationRelay). There's no Asterisk implementation — a self-built
 STT→LLM→TTS pipeline over Asterisk's `externalMedia` is a deliberately deferred
 stretch item (materially larger effort than everything else in this library
-combined). There's also no Dograh C# integration: Dograh always originates or
-receives calls itself on every integration path it exposes, so it can't be handed a
-call this library already established — see [docker/README.md](../docker/README.md)'s
-Dograh section for the infra-level alternative (Dograh runs as an independent
-Stasis application alongside Ringly's on the same Asterisk instance, no code
-integration needed).
+combined). There's also no Dograh implementation of this interface: Dograh always
+originates or receives calls itself on every integration path it exposes, so it
+can't be handed a call this library already established, and Ringly never creates
+or tracks a Dograh session the way `AiAgentSession`/`aiSessionId` assumes — Dograh
+runs as an independent Stasis application alongside Ringly's on the same Asterisk
+instance instead. Escalating a Dograh call to a human queue does have real code
+behind it, just not through `IAiVoiceAgentProvider` — see
+[docker/README.md](../docker/README.md)'s Dograh section for the actual
+bridge-add-agent flow (`QueueTransferRegistrarService` +
+`ICallProvider.ConnectAgentToBridgeAsync`).
 
 ## Twilio ConversationRelay — `Ringly.AiAgent.Twilio`
 

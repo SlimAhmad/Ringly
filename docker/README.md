@@ -132,7 +132,7 @@ Ringly coexist as two independent Stasis applications on the *same* Asterisk PBX
 - **Dialplan** (`extensions.conf`): a `[dograh_ai]` context routing straight to `Stasis(dograh)`.
   Extension `1002` is already seeded into this context (see "Seeded test extensions" above) —
   separate from `ride_hailing`/`call_center`. Calls never move between Dograh's app and Ringly's
-  mid-call in either direction.
+  mid-call, by design — see the escalation bullet below for why.
 - **External media** (`websocket_client.conf`): a `[dograh_media]` connection for
   `chan_websocket`/`res_websocket_client` (confirmed loaded in this image — module names
   `chan_websocket.so`, `res_websocket_client.so`, `res_http_websocket.so`,
@@ -140,13 +140,32 @@ Ringly coexist as two independent Stasis applications on the *same* Asterisk PBX
   template; Dograh's own ARI app supplies the real per-call target when it creates the
   `externalMedia` channel. Dograh's external media uses G.711 μ-law, hence `1002`'s
   `allow=ulaw` (endpoints are dynamic/realtime here, row #19b, not static in `pjsip.conf`).
-- **Escalation to a human**: `POST api/support/escalate?channelId=<id>&queueName=<name>` on
-  `Ringly.Samples.WebApi` — the endpoint Dograh's own tool/function-calling webhook hits when a
-  caller asks for a real person. Confirmed live: Asterisk's ARI supports moving an
-  already-Stasis'd channel to a different app (`POST /channels/{id}/move?app=<dest>`, real and
-  documented since Asterisk 13.26.0/16.3.0) even though it started in Dograh's own `[dograh]` app
-  — this endpoint uses that to pull the channel into Ringly's own Stasis app and drop it in the
-  named queue's holding bridge, same as a customer routed there cold via `POST api/support/{clientId}/route`.
+- **Escalation to a human**: Dograh's own ARI app keeps Stasis/bridge ownership of a caller's
+  channel for the entire life of the call, on every integration path it exposes — confirmed live,
+  twice, that pulling that channel OUT of Dograh's bridge (a raw ARI `/channels/{id}/move`, or a
+  SIP REFER sent by Ringly) makes Dograh's own `ari_manager.py` treat it as the call ending and
+  tear down its bridge/channels within milliseconds, hanging up the caller. So escalation never
+  moves or removes anything from Dograh's bridge — it only ever adds to it:
+    1. Dograh's dashboard is configured with a native **Call Transfer** tool pointed at a Dynamic
+       HTTP Resolver, `POST api/support/dograh-transfer-resolver` — Dograh calls this mid-call
+       when the caller asks for a person, and it returns a fixed destination,
+       `PJSIP/supportregistrar`.
+    2. `supportregistrar` is `QueueTransferRegistrarService`'s own real, always-registered SIP
+       endpoint (`Ringly.Samples.WebApi`, via `SipSorceryCallClient`). Dograh dials it using its
+       own native transfer machinery and adds the resulting channel into its own existing bridge
+       — Ringly never touches Dograh's channel at all.
+    3. `QueueTransferRegistrarService` answers, then polls ARI to find which bridge Dograh just
+       placed that channel into (`GET /channels` + `GET /bridges`, no "get bridge by channel"
+       resource exists), starts MOH on it, and publishes it as a waiting customer the same way a
+       cold `POST api/support/{clientId}/route` call does.
+    4. An agent claiming it from the console calls `ICallProvider.ConnectAgentToBridgeAsync` —
+       this originates the agent's own channel and adds it directly into Dograh's bridge (now a
+       3-way `softmix`), stops the MOH, and never removes or recreates anything already in it. Any
+       agent can still claim it, same as a normal queue entry.
+
+  `EscalateToQueueAsync`/`EscalateToQueueByCallerNumberAsync` (raw `/move`) still exist on
+  `ICallProvider` for providers that don't own the channel this defensively — they are **not**
+  usable to pull a call out of Dograh's own bridge for the reason above.
 
 ### One-time dashboard setup
 
