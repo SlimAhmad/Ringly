@@ -9,6 +9,14 @@ cd docker
 docker compose up -d
 ```
 
+**Switched networks?** (Wi-Fi, mobile hotspot) coturn, Asterisk's SIP/RTP layer, and the MAUI
+samples all need to agree on your machine's current LAN IP, or calls fail silently mid-media —
+see [update-network-ip.ps1](update-network-ip.ps1) and run it from the repo root:
+
+```powershell
+.\docker\update-network-ip.ps1
+```
+
 ## What's configured (§6 checklist items 1–5)
 
 - `pjsip.conf` — `transport-wss` (WebRTC/mobile) + `transport-udp`. No static endpoints —
