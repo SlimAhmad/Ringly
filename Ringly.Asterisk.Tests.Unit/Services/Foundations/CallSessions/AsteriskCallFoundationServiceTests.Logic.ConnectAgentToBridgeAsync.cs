@@ -46,6 +46,10 @@ public partial class AsteriskCallFoundationServiceTests
                 Times.Once);
 
         this.asteriskBrokerMock.Verify(broker =>
+            broker.StopMusicOnHoldAsync(someBridgeId),
+                Times.Once);
+
+        this.asteriskBrokerMock.Verify(broker =>
             broker.AddChannelToBridgeAsync(someBridgeId, someAgentChannel.ChannelId),
                 Times.Once);
 
